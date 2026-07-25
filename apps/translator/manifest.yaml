@@ -1,0 +1,28 @@
+schema_version: 1
+id: dev.lafvin.translator
+name: Voice Translator
+version: 0.1.0
+description: Voice translator sharing the M5 ASR, LLM, and TTS interfaces
+
+entrypoint:
+  executable: python
+  args:
+    - main.py
+  working_directory: .
+
+permissions:
+  - display.raw_frame
+  - button
+  - microphone
+  - speaker
+  - network
+  - ai
+
+ui:
+  mode: raw_frame
+
+lifecycle:
+  startup_timeout_sec: 10
+  exit_timeout_sec: 5
+  restart: never
+  max_restarts: 0

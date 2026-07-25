@@ -1,0 +1,125 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lafvin.dev/schemas/protocol-v1.schema.json",
+  "title": "LAFVIN HAT IPC Protocol V1",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/request"
+    },
+    {
+      "$ref": "#/$defs/response"
+    },
+    {
+      "$ref": "#/$defs/event"
+    }
+  ],
+  "$defs": {
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "id", "type", "method", "params"],
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "const": "request"
+        },
+        "method": {
+          "type": "string",
+          "minLength": 1
+        },
+        "params": {
+          "type": "object"
+        }
+      }
+    },
+    "response": {
+      "type": "object",
+      "required": ["version", "id", "type", "ok"],
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "id": {
+          "type": ["string", "null"]
+        },
+        "type": {
+          "const": "response"
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "result": {
+          "type": "object"
+        },
+        "error": {
+          "type": "object",
+          "required": ["code", "message"],
+          "properties": {
+            "code": {
+              "type": "string",
+              "minLength": 1
+            },
+            "message": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "ok": {
+                "const": true
+              }
+            }
+          },
+          "then": {
+            "required": ["result"],
+            "not": {
+              "required": ["error"]
+            }
+          },
+          "else": {
+            "required": ["error"],
+            "not": {
+              "required": ["result"]
+            }
+          }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "type", "event", "timestamp_ms", "payload"],
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "type": {
+          "const": "event"
+        },
+        "event": {
+          "type": "string",
+          "minLength": 1
+        },
+        "timestamp_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "payload": {
+          "type": "object"
+        }
+      }
+    }
+  }
+}

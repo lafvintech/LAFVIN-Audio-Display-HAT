@@ -1,0 +1,18 @@
+LAFVIN Audio Display HAT
+Copyright 2026 LAFVIN Audio Display HAT Contributors
+
+Except where a component-specific notice states otherwise, source code and
+project-created test media in this checkout are licensed under the Apache
+License, Version 2.0. See LICENSE.
+
+This checkout also includes third-party or separately licensed materials:
+
+* HarmonyOS Sans SC UI font. Its license is retained at
+  assets/font/HarmonyOS Sans/LICENSE-update.txt.
+* Noto Sans KR message font. Its SIL Open Font License is retained at
+  assets/font/Noto_Sans_KR/OFL.txt.
+* LAFVIN Audio Display HAT WM8960 profile v2 resources derived from the
+  Waveshare WM8960 Audio HAT project. Their GPL-3.0 license is retained at
+  hardware/lafvin_hat/wm8960/v2/COPYING.
+
+See docs/THIRD_PARTY_NOTICES.md for component provenance, scope, and checksums.

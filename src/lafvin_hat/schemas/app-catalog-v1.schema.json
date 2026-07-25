@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lafvin.dev/schemas/app-catalog-v1.schema.json",
+  "title": "LAFVIN HAT first-party application catalog",
+  "type": "object",
+  "required": ["schema_version", "apps"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "apps": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "source",
+          "provisioning",
+          "home_order",
+          "implementation"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)+$"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "source": {
+            "type": "string",
+            "minLength": 1
+          },
+          "provisioning": {
+            "enum": ["bundled", "runtime-hosted"]
+          },
+          "home_order": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "implementation": {
+            "enum": ["toolkit", "custom-raw-frame", "runtime-system"]
+          }
+        }
+      }
+    }
+  }
+}

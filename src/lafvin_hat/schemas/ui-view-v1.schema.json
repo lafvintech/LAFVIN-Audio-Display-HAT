@@ -1,0 +1,243 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lafvin.dev/schemas/ui-view-v1.schema.json",
+  "title": "LAFVIN HAT Declarative UI View V1",
+  "oneOf": [
+    {"$ref": "#/$defs/text"},
+    {"$ref": "#/$defs/chat"},
+    {"$ref": "#/$defs/list"},
+    {"$ref": "#/$defs/progress"},
+    {"$ref": "#/$defs/image"},
+    {"$ref": "#/$defs/systemPage"},
+    {"$ref": "#/$defs/dialog"}
+  ],
+  "$defs": {
+    "status": {
+      "enum": ["idle", "listening", "thinking", "answering", "error"]
+    },
+    "emphasis": {
+      "enum": ["normal", "primary", "warning", "danger"]
+    },
+    "viewAction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "label"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1, "maxLength": 80},
+        "label": {"type": "string", "minLength": 1, "maxLength": 40}
+      }
+    },
+    "text": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "text"],
+      "properties": {
+        "kind": {"const": "text"},
+        "title": {"type": "string", "maxLength": 80},
+        "text": {"type": "string", "maxLength": 12000},
+        "status": {"$ref": "#/$defs/status"},
+        "icon": {"type": "string", "maxLength": 40},
+        "emphasis": {"$ref": "#/$defs/emphasis"},
+        "actions": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4,
+          "items": {"$ref": "#/$defs/viewAction"}
+        },
+        "selected": {"type": "integer", "minimum": 0}
+      }
+    },
+    "chatMessage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role", "text"],
+      "properties": {
+        "role": {"enum": ["user", "assistant", "system"]},
+        "text": {"type": "string", "maxLength": 12000}
+      }
+    },
+    "chat": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "messages"],
+      "properties": {
+        "kind": {"const": "chat"},
+        "title": {"type": "string", "maxLength": 80},
+        "status": {"$ref": "#/$defs/status"},
+        "messages": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {"$ref": "#/$defs/chatMessage"}
+        },
+        "streaming": {"type": "boolean"},
+        "actions": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4,
+          "items": {"$ref": "#/$defs/viewAction"}
+        },
+        "selected": {"type": "integer", "minimum": 0}
+      }
+    },
+    "listItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "label"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1, "maxLength": 80},
+        "label": {"type": "string", "minLength": 1, "maxLength": 120},
+        "meta": {"type": "string", "maxLength": 160}
+      }
+    },
+    "list": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "items", "selected"],
+      "properties": {
+        "kind": {"const": "list"},
+        "title": {"type": "string", "maxLength": 80},
+        "items": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {"$ref": "#/$defs/listItem"}
+        },
+        "selected": {"type": "integer", "minimum": 0}
+      }
+    },
+    "progress": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "message", "value"],
+      "properties": {
+        "kind": {"const": "progress"},
+        "title": {"type": "string", "maxLength": 80},
+        "message": {"type": "string", "maxLength": 500},
+        "value": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    },
+    "imageSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "path"],
+      "properties": {
+        "type": {"const": "file"},
+        "path": {"type": "string", "minLength": 1, "maxLength": 500}
+      }
+    },
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "source", "fit"],
+      "properties": {
+        "kind": {"const": "image"},
+        "title": {"type": "string", "maxLength": 80},
+        "source": {"$ref": "#/$defs/imageSource"},
+        "fit": {"enum": ["contain", "cover"]}
+      }
+    },
+    "systemPageAction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "label"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1, "maxLength": 80},
+        "label": {"type": "string", "minLength": 1, "maxLength": 40}
+      }
+    },
+    "systemPageText": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "text"],
+      "properties": {
+        "type": {"const": "text"},
+        "text": {"type": "string", "minLength": 1, "maxLength": 1000},
+        "style": {"enum": ["body", "strong", "small"]}
+      }
+    },
+    "systemPageValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "text"],
+      "properties": {
+        "type": {"const": "value"},
+        "text": {"type": "string", "minLength": 1, "maxLength": 80}
+      }
+    },
+    "systemPageButtonRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "actions"],
+      "properties": {
+        "type": {"const": "button_row"},
+        "actions": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4,
+          "items": {"$ref": "#/$defs/systemPageAction"}
+        }
+      }
+    },
+    "systemPageDivider": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": {"const": "divider"}
+      }
+    },
+    "systemPageSpacer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "size"],
+      "properties": {
+        "type": {"const": "spacer"},
+        "size": {"enum": ["small", "medium", "large"]}
+      }
+    },
+    "systemPageComponent": {
+      "oneOf": [
+        {"$ref": "#/$defs/systemPageText"},
+        {"$ref": "#/$defs/systemPageValue"},
+        {"$ref": "#/$defs/systemPageButtonRow"},
+        {"$ref": "#/$defs/systemPageDivider"},
+        {"$ref": "#/$defs/systemPageSpacer"}
+      ]
+    },
+    "systemPage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "title", "components", "selected"],
+      "properties": {
+        "kind": {"const": "system_page"},
+        "title": {"type": "string", "minLength": 1, "maxLength": 80},
+        "components": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 20,
+          "items": {"$ref": "#/$defs/systemPageComponent"}
+        },
+        "selected": {"type": "integer", "minimum": 0}
+      }
+    },
+    "dialog": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "title", "message", "actions"],
+      "properties": {
+        "kind": {"const": "dialog"},
+        "title": {"type": "string", "minLength": 1, "maxLength": 80},
+        "message": {"type": "string", "maxLength": 1000},
+        "actions": {
+          "type": "array",
+          "maxItems": 4,
+          "items": {"type": "string", "minLength": 1, "maxLength": 40}
+        },
+        "emphasis": {"$ref": "#/$defs/emphasis"}
+      }
+    }
+  }
+}

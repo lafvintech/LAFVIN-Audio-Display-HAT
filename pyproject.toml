@@ -1,0 +1,61 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lafvin-hat"
+version = "0.3.0b1"
+description = "Portable AI device runtime and application SDK"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [
+  { name = "LAFVIN HAT Contributors" }
+]
+license = { file = "LICENSE" }
+keywords = ["raspberry-pi", "embedded", "ai", "audio", "device-runtime"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "License :: OSI Approved :: Apache Software License",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Software Development :: Embedded Systems",
+]
+dependencies = [
+  "jsonschema>=4.18",
+  "numpy>=1.24",
+  "Pillow>=10.0",
+  "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=7.4",
+]
+hardware = [
+  "gpiod>=2.0",
+  "spidev>=3.6",
+]
+ai = [
+  "httpx>=0.27",
+]
+
+[project.scripts]
+lafvin-hat = "lafvin_hat.cli:main"
+# V3-M6.1 compatibility alias. New documentation uses ``lafvin-hat``.
+lafvin = "lafvin_hat.cli:main"
+lafvin-runtime = "lafvin_hat.runtime.main:main"
+lafvin-sdk = "lafvin_hat.sdk.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+lafvin_hat = ["schemas/*.json", "runtime/backends/*.html"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+pythonpath = ["src"]
+testpaths = ["tests"]

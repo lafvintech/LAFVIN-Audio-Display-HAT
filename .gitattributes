@@ -1,0 +1,8 @@
+# The editable WM8960 profile and its release ZIP use LF as their canonical
+# text representation. This avoids platform line-ending churn in profile
+# rebuilds and shell/service resources.
+hardware/lafvin_hat/wm8960/v1/lafvin-hat-wm8960-v1/** text eol=lf
+hardware/lafvin_hat/wm8960/v2/lafvin-hat-wm8960-v2/** text eol=lf
+
+# Bundled UI fonts are literal upstream binary resources.
+assets/font/**/*.ttf binary

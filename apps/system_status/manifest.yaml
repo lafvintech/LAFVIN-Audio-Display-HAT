@@ -1,0 +1,24 @@
+schema_version: 1
+id: dev.lafvin.system-status
+name: System Status
+version: 0.1.0
+description: Runtime, device, network, temperature, app, and storage status
+
+entrypoint:
+  executable: python
+  args:
+    - main.py
+  working_directory: .
+
+permissions:
+  - display.raw_frame
+  - button
+
+ui:
+  mode: raw_frame
+
+lifecycle:
+  startup_timeout_sec: 10
+  exit_timeout_sec: 3
+  restart: never
+  max_restarts: 0

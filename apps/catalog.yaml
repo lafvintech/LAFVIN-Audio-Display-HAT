@@ -1,0 +1,51 @@
+schema_version: 1
+
+apps:
+  - id: dev.lafvin.hardware-test
+    name: Hardware Test
+    source: src/lafvin_hat/runtime/system_apps/hardware_test.py
+    provisioning: runtime-hosted
+    home_order: 0
+    implementation: runtime-system
+
+  - id: dev.lafvin.system-status
+    name: System Status
+    source: apps/system_status
+    provisioning: bundled
+    home_order: 1
+    implementation: toolkit
+
+  - id: dev.lafvin.system-volume
+    name: Volume
+    source: apps/system_volume
+    provisioning: bundled
+    home_order: 2
+    implementation: toolkit
+
+  - id: dev.lafvin.chatbot
+    name: AI Chatbot
+    source: apps/chatbot
+    provisioning: bundled
+    home_order: 3
+    implementation: toolkit
+
+  - id: dev.lafvin.translator
+    name: Voice Translator
+    source: apps/translator
+    provisioning: bundled
+    home_order: 4
+    implementation: toolkit
+
+  - id: dev.lafvin.jump
+    name: One Button Jump
+    source: apps/one_button_jump
+    provisioning: bundled
+    home_order: 5
+    implementation: custom-raw-frame
+
+  - id: dev.lafvin.video-player
+    name: Video Player
+    source: apps/video_player
+    provisioning: bundled
+    home_order: 6
+    implementation: custom-raw-frame

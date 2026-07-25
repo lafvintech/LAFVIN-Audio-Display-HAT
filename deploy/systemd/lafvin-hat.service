@@ -1,0 +1,28 @@
+# Managed by LAFVIN HAT checkout deployment.
+[Unit]
+Description=LAFVIN HAT Device Runtime
+After=network-online.target sound.target wm8960-soundcard.service
+Wants=network-online.target wm8960-soundcard.service
+
+[Service]
+Type=simple
+User=@@LAFVIN_USER@@
+Group=@@LAFVIN_GROUP@@
+SupplementaryGroups=audio gpio spi
+Environment=LAFVIN_RUNTIME_ENDPOINT=unix:///run/lafvin-hat/runtime.sock
+Environment=@@LAFVIN_PROJECT_ENV@@
+ExecStart=@@LAFVIN_RUNTIME@@ \
+  --env-file /etc/lafvin-hat/runtime.env \
+  --backend lafvin-hat \
+  --endpoint unix:///run/lafvin-hat/runtime.sock \
+  --data-dir /var/lib/lafvin-hat \
+  --log-dir /var/log/lafvin-hat
+Restart=on-failure
+RestartSec=3
+RuntimeDirectory=lafvin-hat
+StateDirectory=lafvin-hat
+LogsDirectory=lafvin-hat
+UMask=0007
+
+[Install]
+WantedBy=multi-user.target
