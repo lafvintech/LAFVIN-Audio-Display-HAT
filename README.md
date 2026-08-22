@@ -30,7 +30,7 @@ paths continue to use the `lafvin-hat` or `lafvin_hat` identifier.
 
 ## Release and License
 
-The current public prerelease is `0.3.0b1`.
+The current public prerelease is `0.3.0b2`.
 
 Except where a component-specific notice states otherwise, source code and
 project-created test media are licensed under the
@@ -126,7 +126,7 @@ The optional dependency groups provide:
 | --- | --- |
 | `dev` | Automated tests with `pytest` |
 | `hardware` | `spidev` and `gpiod` |
-| `ai` | OpenAI-compatible provider support |
+| `ai` | Cloud ASR, LLM, and TTS provider support |
 
 ### 5. Configure Development Mode
 
@@ -135,26 +135,126 @@ cp .env.example .env
 nano .env
 ```
 
-For a real OpenAI-compatible provider:
+For OpenAI ASR, LLM, and TTS:
 
 ```ini
-LAFVIN_AI_PROVIDER=openai-compatible
+LAFVIN_ASR_PROVIDER=openai
+LAFVIN_LLM_PROVIDER=openai
+LAFVIN_TTS_PROVIDER=openai
 OPENAI_API_KEY=replace-with-your-key
-OPENAI_BASE_URL=https://api.openai.com/v1
 LAFVIN_ASR_MODEL=whisper-1
 LAFVIN_LLM_MODEL=gpt-4o-mini
 LAFVIN_TTS_MODEL=tts-1
 LAFVIN_TTS_VOICE=alloy
 ```
 
+The three capabilities are selected independently:
+
+| Provider | ASR | LLM | TTS | API key variable |
+| --- | ---: | ---: | ---: | --- |
+| `openai` | Yes | Yes | Yes | `OPENAI_API_KEY` |
+| `deepseek` | No | Yes | No | `DEEPSEEK_API_KEY` |
+| `kimi` | No | Yes | No | `MOONSHOT_API_KEY` |
+| `claude` | No | Yes | No | `ANTHROPIC_API_KEY` |
+| `minimax` | No | No | Yes | `MINIMAX_API_KEY` |
+| `fish` | Yes | No | Yes | `FISH_AUDIO_API_KEY` |
+| `openai-compatible` | No | Yes | No | `LAFVIN_LLM_API_KEY` |
+
+For example, use OpenAI ASR/TTS with DeepSeek LLM:
+
+```ini
+LAFVIN_ASR_PROVIDER=openai
+LAFVIN_LLM_PROVIDER=deepseek
+LAFVIN_TTS_PROVIDER=openai
+OPENAI_API_KEY=replace-with-your-openai-key
+DEEPSEEK_API_KEY=replace-with-your-deepseek-key
+LAFVIN_LLM_MODEL=deepseek-v4-flash
+```
+
+Use `MOONSHOT_API_KEY` for `kimi`, or `ANTHROPIC_API_KEY` for `claude`. To use
+another OpenAI-compatible LLM, select `openai-compatible` and set
+`LAFVIN_LLM_BASE_URL`, `LAFVIN_LLM_API_KEY`, and `LAFVIN_LLM_MODEL`. Custom ASR
+and TTS endpoints are intentionally unsupported because their audio protocols
+and formats are not interchangeable.
+
+To replace only ASR with Fish Audio:
+
+```ini
+LAFVIN_ASR_PROVIDER=fish
+FISH_AUDIO_API_KEY=replace-with-your-fish-audio-key
+LAFVIN_ASR_MODEL=transcribe-1
+# Optional; omit this setting for automatic language detection.
+# LAFVIN_ASR_LANGUAGE=en
+```
+
+Fish Audio Transcribe-1 is currently a beta, paid API. At the time of writing,
+the official price is USD 0.36 per audio hour, billed by audio duration rounded
+up to the nearest second. It consumes Fish Audio API credit, which is managed
+separately from platform credit. Check the current
+[pricing](https://docs.fish.audio/developer-guide/models-pricing/pricing-and-rate-limits)
+before use. You can inspect the account's API credit without printing the key:
+
+```bash
+set -a
+source .env
+set +a
+curl -sS \
+  -H "Authorization: Bearer $FISH_AUDIO_API_KEY" \
+  "https://api.fish.audio/wallet/self/api-credit?check_free_credit=true"
+```
+
+The JSON response contains `credit` and may contain `has_free_credit`. Add API
+credit from the [Fish Audio developer billing page](https://fish.audio/app/developers/billing/)
+if the available balance is insufficient.
+
+To replace only TTS with MiniMax:
+
+```ini
+LAFVIN_TTS_PROVIDER=minimax
+MINIMAX_API_KEY=replace-with-your-minimax-key
+LAFVIN_TTS_MODEL=speech-2.8-turbo
+LAFVIN_TTS_VOICE=male-qn-qingse
+```
+
+To replace only TTS with Fish Audio:
+
+```ini
+LAFVIN_TTS_PROVIDER=fish
+FISH_AUDIO_API_KEY=replace-with-your-fish-audio-key
+LAFVIN_TTS_MODEL=s2.1-pro
+# Optional: remove the existing OpenAI voice or replace it with a Fish
+# reference ID. With no reference ID, Fish Audio selects its default voice.
+# LAFVIN_TTS_VOICE=your-fish-reference-id
+```
+
+The built-in service URLs are already used by default. Provider-specific URL
+overrides such as `MINIMAX_TTS_BASE_URL` and `FISH_AUDIO_BASE_URL` are intended
+only for advanced deployment needs. These are third-party APIs and may require
+a paid balance separately from any consumer subscription.
+
 For an explicit offline test:
 
 ```ini
-LAFVIN_AI_PROVIDER=fake
+LAFVIN_ASR_PROVIDER=fake
+LAFVIN_LLM_PROVIDER=fake
+LAFVIN_TTS_PROVIDER=fake
 ```
 
 The local `.env` file is ignored by Git. Do not expose API keys in screenshots,
 logs, bug reports, or commits.
+
+To diagnose LLM responses or TTS reading formatting symbols aloud, temporarily
+enable content tracing:
+
+```ini
+LAFVIN_AI_LOG_CONTENT=1
+```
+
+When enabled, logs include the raw LLM response and the cleaned text submitted
+for each TTS segment. TTS APIs return audio rather than the text actually spoken,
+so the submitted text is the reliable diagnostic record. Conversation content
+may be private; this option is disabled by default and should be removed or reset
+to `0` after debugging.
 
 ### 6. Run the Interactive Hardware Test
 
@@ -255,7 +355,8 @@ systemctl status lafvin-hat --no-pager
 systemctl status wm8960-soundcard --no-pager
 ```
 
-## Application and Log Commands
+<details>
+<summary><strong>Application and Log Commands</strong></summary>
 
 ```bash
 lafvin-hat info
@@ -282,7 +383,10 @@ lafvin-hat app run apps/video_player
 corresponding `python -m lafvin_hat...` forms remain compatibility entrypoints
 for existing scripts.
 
-## Switch Back to Development Mode
+</details>
+
+<details>
+<summary><strong>Switch Back to Development Mode</strong></summary>
 
 Stop the deployed Runtime first:
 
@@ -304,7 +408,10 @@ After testing, press `Ctrl+C` and restore the deployed service:
 sudo systemctl start lafvin-hat
 ```
 
-## Update the Checkout
+</details>
+
+<details>
+<summary><strong>Update the Deployed Project</strong></summary>
 
 For ordinary Runtime and bundled-application source updates:
 
@@ -338,6 +445,8 @@ After reboot:
 cd ~/LAFVIN-Audio-Display-HAT
 sudo bash install_driver.sh --check
 ```
+
+</details>
 
 ## Deployment Ownership and Recovery
 
@@ -406,7 +515,8 @@ sudo bash deploy/install_raspberry_pi.sh
 sudo systemctl start lafvin-hat
 ```
 
-## Desktop and Simulator Development
+<details>
+<summary><strong>Desktop and Simulator Development</strong></summary>
 
 On Windows without the physical HAT, use PowerShell:
 
@@ -452,6 +562,8 @@ Inject simulator-only button events from another terminal:
 lafvin-hat sim button pressed
 lafvin-hat sim button released
 ```
+
+</details>
 
 ## Application Rendering
 

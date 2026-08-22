@@ -25,6 +25,9 @@ class FakeASRProvider:
         await asyncio.sleep(0)
         return self.transcript
 
+    async def aclose(self) -> None:
+        return None
+
 
 class FakeLLMProvider:
     def __init__(
@@ -45,6 +48,9 @@ class FakeLLMProvider:
             await asyncio.sleep(0)
             yield LLMChunk(self.response[offset:offset + self.chunk_size])
         yield LLMChunk("", finish_reason="stop")
+
+    async def aclose(self) -> None:
+        return None
 
 
 class FakeTTSProvider:
@@ -86,6 +92,9 @@ class FakeTTSProvider:
             output.writeframes(frames)
         return AudioResult(path=path)
 
+    async def aclose(self) -> None:
+        return None
+
 
 class FakeAIProvider:
     """Compatibility wrapper for M4 code that used one provider object."""
@@ -124,3 +133,10 @@ class FakeAIProvider:
         output_path: str | Path | None = None,
     ) -> AudioResult:
         return await self.tts.synthesize(text, output_path=output_path)
+
+    async def aclose(self) -> None:
+        await asyncio.gather(
+            self.asr.aclose(),
+            self.llm.aclose(),
+            self.tts.aclose(),
+        )

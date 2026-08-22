@@ -21,4 +21,7 @@ lafvin-hat app start dev.lafvin.jump
 ```
 
 Press the simulator or hardware button to jump. After collision, the in-game
-menu can continue or exit.
+menu can continue or exit. Obstacles are generated continuously with randomized
+spacing, like an endless runner, and may appear together on screen. Their spawn
+position is at most 20 pixels beyond the right edge. Movement speed is 130% of
+the base speed from score 15 and 150% of the base speed from score 30.

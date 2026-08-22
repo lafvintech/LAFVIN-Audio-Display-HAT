@@ -119,3 +119,48 @@ def test_system_volume_app_debounces_feedback_preview() -> None:
         await app_module.cancel_volume_preview(fake_app, preview)
 
     asyncio.run(scenario())
+
+
+def test_system_volume_app_cancels_active_feedback_before_stopping_audio(
+) -> None:
+    class BlockingAudio(AudioStub):
+        def __init__(self) -> None:
+            super().__init__(70)
+            self.started = asyncio.Event()
+            self.cancelled = asyncio.Event()
+            self.events: list[str] = []
+
+        async def play_feedback_tone(self, kind: str) -> dict[str, object]:
+            self.feedback_tones.append(kind)
+            self.started.set()
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                self.events.append("preview_cancelled")
+                self.cancelled.set()
+                raise
+
+        async def stop(self) -> dict[str, object]:
+            self.events.append("audio_stopped")
+            return await super().stop()
+
+    async def scenario() -> None:
+        app_module = _load_module()
+        fake_app = AppStub(70)
+        audio = BlockingAudio()
+        fake_app.audio = audio
+
+        preview = await app_module.schedule_volume_preview(
+            fake_app,
+            None,
+            delay_sec=0,
+        )
+        await asyncio.wait_for(audio.started.wait(), timeout=1)
+        await app_module.cancel_volume_preview(fake_app, preview)
+
+        assert preview.cancelled()
+        assert audio.cancelled.is_set()
+        assert audio.stop_count == 1
+        assert audio.events == ["preview_cancelled", "audio_stopped"]
+
+    asyncio.run(scenario())

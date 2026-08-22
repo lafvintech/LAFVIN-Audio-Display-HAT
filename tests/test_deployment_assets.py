@@ -261,12 +261,30 @@ def test_systemd_uses_runtime_env_file_parser() -> None:
     assert "@@LAFVIN_APP_CHATBOT@@" not in service
     assert "ExecStart=@@LAFVIN_RUNTIME@@" in service
     assert "EnvironmentFile=" not in service
-    assert "LAFVIN_AI_PROVIDER=openai-compatible" in template
+    assert "LAFVIN_AI_PROVIDER=" not in template
+    assert "LAFVIN_ASR_PROVIDER=openai" in template
+    assert "LAFVIN_LLM_PROVIDER=openai" in template
+    assert "LAFVIN_TTS_PROVIDER=openai" in template
     assert "LAFVIN_ASR_PROVIDER=fake" not in template
     assert "LAFVIN_LLM_PROVIDER=fake" not in template
     assert "LAFVIN_TTS_PROVIDER=fake" not in template
-    assert "OPENAI_BASE_URL=" in template
+    assert "OPENAI_BASE_URL=" not in template
     assert "LAFVIN_OPENAI_BASE_URL=" not in template
+    assert "# LAFVIN_LLM_BASE_URL=" in template
+    assert "LAFVIN_ASR_BASE_URL=" not in template
+    assert "LAFVIN_TTS_BASE_URL=" not in template
+    assert "LAFVIN_ASR_API_KEY=" not in template
+    assert "LAFVIN_TTS_API_KEY=" not in template
+    assert "# DEEPSEEK_API_KEY=" in template
+    assert "# MOONSHOT_API_KEY=" in template
+    assert "# ANTHROPIC_API_KEY=" in template
+    assert "# MINIMAX_API_KEY=" in template
+    assert "# FISH_AUDIO_API_KEY=" in template
+    assert "# Fish Audio ASR uses paid API credit" in template
+    assert "# LAFVIN_ASR_MODEL=transcribe-1" in template
+    assert "# LAFVIN_ASR_LANGUAGE=zh" in template
+    assert "KIMI_API_KEY" not in template
+    assert "CLAUDE_API_KEY" not in template
 
 
 def test_development_and_deployment_env_templates_match() -> None:

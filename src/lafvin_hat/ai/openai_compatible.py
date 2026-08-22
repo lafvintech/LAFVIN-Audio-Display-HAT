@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .http_client import ReusableHTTPClient
 from .models import AudioResult, LLMChunk, Message
 
 
@@ -50,6 +51,7 @@ class OpenAICompatibleASR:
         model: str = "whisper-1",
         timeout: float = 60.0,
         retries: int = 2,
+        provider_name: str = "openai-compatible",
     ) -> None:
         self.config = OpenAICompatibleConfig(
             base_url,
@@ -58,36 +60,51 @@ class OpenAICompatibleASR:
             retries,
         )
         self.model = model
+        self.provider_name = provider_name
+        self._http_client = ReusableHTTPClient(
+            capability="asr",
+            provider_name=provider_name,
+            timeout=timeout,
+            httpx_loader=_httpx,
+        )
 
     async def transcribe(self, audio_path: str | Path) -> str:
         httpx = _httpx()
         path = Path(audio_path)
         if not path.is_file():
             raise FileNotFoundError(path)
-        async with httpx.AsyncClient(timeout=self.config.timeout) as client:
-            for attempt in range(self.config.retries + 1):
-                try:
-                    with path.open("rb") as audio:
-                        response = await client.post(
-                            (
-                                f"{self.config.normalized_base_url}"
-                                "/audio/transcriptions"
-                            ),
-                            headers=self.config.headers(),
-                            data={"model": self.model},
-                            files={"file": (path.name, audio, "audio/wav")},
-                        )
-                    response.raise_for_status()
-                    break
-                except Exception as exc:
-                    if not _should_retry(httpx, exc, attempt, self.config):
-                        raise
-                    await _wait_before_retry("asr", attempt, exc)
+        client = await self._http_client.get()
+        for attempt in range(self.config.retries + 1):
+            try:
+                with path.open("rb") as audio:
+                    response = await client.post(
+                        (
+                            f"{self.config.normalized_base_url}"
+                            "/audio/transcriptions"
+                        ),
+                        headers=self.config.headers(),
+                        data={"model": self.model},
+                        files={"file": (path.name, audio, "audio/wav")},
+                    )
+                response.raise_for_status()
+                break
+            except Exception as exc:
+                if not _should_retry(httpx, exc, attempt, self.config):
+                    raise
+                await _wait_before_retry(
+                    "asr",
+                    self.provider_name,
+                    attempt,
+                    exc,
+                )
         value = response.json()
         text = value.get("text")
         if not isinstance(text, str):
             raise RuntimeError("ASR response does not contain text")
         return text
+
+    async def aclose(self) -> None:
+        await self._http_client.aclose()
 
 
 class OpenAICompatibleLLM:
@@ -99,6 +116,7 @@ class OpenAICompatibleLLM:
         model: str = "gpt-4o-mini",
         timeout: float = 60.0,
         retries: int = 2,
+        provider_name: str = "openai-compatible",
     ) -> None:
         self.config = OpenAICompatibleConfig(
             base_url,
@@ -107,12 +125,18 @@ class OpenAICompatibleLLM:
             retries,
         )
         self.model = model
+        self.provider_name = provider_name
+        self._http_client = ReusableHTTPClient(
+            capability="llm",
+            provider_name=provider_name,
+            timeout=timeout,
+            httpx_loader=_httpx,
+        )
 
     async def stream_chat(
         self,
         messages: list[Message],
     ) -> AsyncIterator[LLMChunk]:
-        httpx = _httpx()
         payload = {
             "model": self.model,
             "stream": True,
@@ -121,37 +145,40 @@ class OpenAICompatibleLLM:
                 for message in messages
             ],
         }
-        async with httpx.AsyncClient(timeout=self.config.timeout) as client:
-            async with client.stream(
-                "POST",
-                f"{self.config.normalized_base_url}/chat/completions",
-                headers={
-                    **self.config.headers(),
-                    "Content-Type": "application/json",
-                },
-                json=payload,
-            ) as response:
-                response.raise_for_status()
-                async for line in response.aiter_lines():
-                    if not line.startswith("data:"):
-                        continue
-                    data = line[5:].strip()
-                    if data == "[DONE]":
-                        return
-                    value = json.loads(data)
-                    choice = value.get("choices", [{}])[0]
-                    delta = choice.get("delta") or {}
-                    text = delta.get("content") or ""
-                    finish_reason = choice.get("finish_reason")
-                    if text or finish_reason:
-                        yield LLMChunk(
-                            text=str(text),
-                            finish_reason=(
-                                str(finish_reason)
-                                if finish_reason is not None
-                                else None
-                            ),
-                        )
+        client = await self._http_client.get()
+        async with client.stream(
+            "POST",
+            f"{self.config.normalized_base_url}/chat/completions",
+            headers={
+                **self.config.headers(),
+                "Content-Type": "application/json",
+            },
+            json=payload,
+        ) as response:
+            response.raise_for_status()
+            async for line in response.aiter_lines():
+                if not line.startswith("data:"):
+                    continue
+                data = line[5:].strip()
+                if data == "[DONE]":
+                    return
+                value = json.loads(data)
+                choice = value.get("choices", [{}])[0]
+                delta = choice.get("delta") or {}
+                text = delta.get("content") or ""
+                finish_reason = choice.get("finish_reason")
+                if text or finish_reason:
+                    yield LLMChunk(
+                        text=str(text),
+                        finish_reason=(
+                            str(finish_reason)
+                            if finish_reason is not None
+                            else None
+                        ),
+                    )
+
+    async def aclose(self) -> None:
+        await self._http_client.aclose()
 
 
 class OpenAICompatibleTTS:
@@ -164,6 +191,7 @@ class OpenAICompatibleTTS:
         voice: str = "alloy",
         timeout: float = 60.0,
         retries: int = 2,
+        provider_name: str = "openai-compatible",
     ) -> None:
         self.config = OpenAICompatibleConfig(
             base_url,
@@ -173,6 +201,13 @@ class OpenAICompatibleTTS:
         )
         self.model = model
         self.voice = voice
+        self.provider_name = provider_name
+        self._http_client = ReusableHTTPClient(
+            capability="tts",
+            provider_name=provider_name,
+            timeout=timeout,
+            httpx_loader=_httpx,
+        )
 
     async def synthesize(
         self,
@@ -186,31 +221,39 @@ class OpenAICompatibleTTS:
             if output_path is not None
             else Path(tempfile.mkdtemp(prefix="lafvin-tts-")) / "speech.wav"
         )
-        async with httpx.AsyncClient(timeout=self.config.timeout) as client:
-            for attempt in range(self.config.retries + 1):
-                try:
-                    response = await client.post(
-                        f"{self.config.normalized_base_url}/audio/speech",
-                        headers={
-                            **self.config.headers(),
-                            "Content-Type": "application/json",
-                        },
-                        json={
-                            "model": self.model,
-                            "voice": self.voice,
-                            "input": text,
-                            "response_format": "wav",
-                        },
-                    )
-                    response.raise_for_status()
-                    break
-                except Exception as exc:
-                    if not _should_retry(httpx, exc, attempt, self.config):
-                        raise
-                    await _wait_before_retry("tts", attempt, exc)
+        client = await self._http_client.get()
+        for attempt in range(self.config.retries + 1):
+            try:
+                response = await client.post(
+                    f"{self.config.normalized_base_url}/audio/speech",
+                    headers={
+                        **self.config.headers(),
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "model": self.model,
+                        "voice": self.voice,
+                        "input": text,
+                        "response_format": "wav",
+                    },
+                )
+                response.raise_for_status()
+                break
+            except Exception as exc:
+                if not _should_retry(httpx, exc, attempt, self.config):
+                    raise
+                await _wait_before_retry(
+                    "tts",
+                    self.provider_name,
+                    attempt,
+                    exc,
+                )
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(response.content)
         return AudioResult(path=path)
+
+    async def aclose(self) -> None:
+        await self._http_client.aclose()
 
 
 class OpenAICompatibleProvider:
@@ -268,6 +311,22 @@ class OpenAICompatibleProvider:
     ) -> AudioResult:
         return await self.tts.synthesize(text, output_path=output_path)
 
+    async def aclose(self) -> None:
+        results = await asyncio.gather(
+            self.asr.aclose(),
+            self.llm.aclose(),
+            self.tts.aclose(),
+            return_exceptions=True,
+        )
+        failure = next(
+            (result for result in results if isinstance(result, BaseException)),
+            None,
+        )
+        if failure is not None:
+            raise RuntimeError(
+                f"Failed to close OpenAI-compatible provider: {failure}"
+            ) from failure
+
 
 def _httpx() -> Any:
     try:
@@ -297,13 +356,16 @@ def _should_retry(
 
 async def _wait_before_retry(
     capability: str,
+    provider_name: str,
     attempt: int,
     exc: Exception,
 ) -> None:
     delay = min(4.0, 0.5 * (2 ** attempt))
     logger.warning(
-        "stage=%s event=retry attempt=%s delay_ms=%s error_type=%s",
+        "stage=%s provider=%s event=retry attempt=%s delay_ms=%s "
+        "error_type=%s",
         capability,
+        provider_name,
         attempt + 1,
         int(delay * 1000),
         type(exc).__name__,
@@ -311,7 +373,8 @@ async def _wait_before_retry(
     started_at = time.monotonic()
     await asyncio.sleep(delay)
     logger.debug(
-        "stage=%s event=retry_wait_done duration_ms=%s",
+        "stage=%s provider=%s event=retry_wait_done duration_ms=%s",
         capability,
+        provider_name,
         int((time.monotonic() - started_at) * 1000),
     )

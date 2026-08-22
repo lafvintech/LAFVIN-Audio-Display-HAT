@@ -1,8 +1,8 @@
 schema_version: 1
 id: dev.lafvin.jump
 name: One Button Jump
-version: 0.1.0
-description: M3 Raw Frame and input latency demonstration
+version: 0.2.0
+description: Single-button endless runner with randomized obstacles and progressive speed
 
 entrypoint:
   executable: python

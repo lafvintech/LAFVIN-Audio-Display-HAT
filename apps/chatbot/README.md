@@ -7,7 +7,8 @@ The app reads provider settings from the Runtime process environment. A
 provider must be configured explicitly. Missing provider credentials are shown
 on the device instead of silently selecting a demo response.
 
-Use `LAFVIN_AI_PROVIDER=fake` explicitly for offline testing.
+For offline testing, explicitly set `LAFVIN_ASR_PROVIDER`,
+`LAFVIN_LLM_PROVIDER`, and `LAFVIN_TTS_PROVIDER` to `fake`.
 
 Run during development:
 

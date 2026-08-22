@@ -302,14 +302,13 @@ class RuntimeServer:
                         "INVALID_REQUEST",
                         "Message exceeds the size limit",
                     )
-                    writer.write(encode_message(response))
-                    await writer.drain()
+                    await self._send_response(writer, response)
                     return
                 if not line:
                     return
                 response, subscription = await self._process_line(line)
-                writer.write(encode_message(response))
-                await writer.drain()
+                if not await self._send_response(writer, response):
+                    return
                 if subscription is not None:
                     await self._stream_events(subscription, reader, writer)
                     return
@@ -319,6 +318,24 @@ class RuntimeServer:
             writer.close()
             with contextlib.suppress(ConnectionError, BrokenPipeError):
                 await writer.wait_closed()
+
+    async def _send_response(
+        self,
+        writer: asyncio.StreamWriter,
+        response: dict[str, Any],
+    ) -> bool:
+        try:
+            writer.write(encode_message(response))
+            await writer.drain()
+        except (ConnectionError, BrokenPipeError) as exc:
+            logger.debug(
+                "stage=ipc event=client_disconnected "
+                "phase=response_write request_id=%s error_type=%s",
+                response.get("id"),
+                type(exc).__name__,
+            )
+            return False
+        return True
 
     async def _process_line(
         self,

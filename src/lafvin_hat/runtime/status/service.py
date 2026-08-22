@@ -10,6 +10,25 @@ from typing import Any
 from urllib.parse import urlsplit
 
 
+_PROVIDER_API_KEYS = {
+    "claude": "ANTHROPIC_API_KEY",
+    "deepseek": "DEEPSEEK_API_KEY",
+    "fish": "FISH_AUDIO_API_KEY",
+    "kimi": "MOONSHOT_API_KEY",
+    "minimax": "MINIMAX_API_KEY",
+    "openai": "OPENAI_API_KEY",
+    "openai-compatible": "LAFVIN_LLM_API_KEY",
+}
+
+_LLM_ENDPOINTS = {
+    "claude": ("ANTHROPIC_BASE_URL", "https://api.anthropic.com/v1"),
+    "deepseek": ("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
+    "kimi": ("MOONSHOT_BASE_URL", "https://api.moonshot.cn/v1"),
+    "openai": ("OPENAI_BASE_URL", "https://api.openai.com/v1"),
+    "openai-compatible": ("LAFVIN_LLM_BASE_URL", ""),
+}
+
+
 class SystemStatusService:
     def __init__(
         self,
@@ -120,25 +139,51 @@ def _ai_state() -> dict[str, Any]:
     asr_provider = os.getenv("LAFVIN_ASR_PROVIDER", common or "fake")
     llm_provider = os.getenv("LAFVIN_LLM_PROVIDER", common or "fake")
     tts_provider = os.getenv("LAFVIN_TTS_PROVIDER", common or "fake")
-    base_url = (
-        os.getenv("LAFVIN_LLM_BASE_URL")
-        or os.getenv("LAFVIN_ASR_BASE_URL")
-        or os.getenv("LAFVIN_TTS_BASE_URL")
-        or os.getenv("OPENAI_BASE_URL")
-        or "https://api.openai.com/v1"
-    )
+    providers = (asr_provider, llm_provider, tts_provider)
+    selection = providers[0] if len(set(providers)) == 1 else "mixed"
+    base_url = _llm_base_url(llm_provider)
+    base_url_host = (urlsplit(base_url).netloc or None) if base_url else None
     return {
-        "configured": bool(os.getenv("OPENAI_API_KEY")),
-        "provider": common or "fake",
+        "configured": all(
+            _provider_is_configured(capability, provider)
+            for capability, provider in zip(
+                ("ASR", "LLM", "TTS"),
+                providers,
+                strict=True,
+            )
+        ),
+        "provider": selection,
         "asr_provider": asr_provider,
         "llm_provider": llm_provider,
         "tts_provider": tts_provider,
-        "base_url_host": urlsplit(base_url).netloc or None,
+        "base_url_host": base_url_host,
         "asr_model": os.getenv("LAFVIN_ASR_MODEL", "whisper-1"),
         "llm_model": os.getenv("LAFVIN_LLM_MODEL", "gpt-4o-mini"),
         "tts_model": os.getenv("LAFVIN_TTS_MODEL", "tts-1"),
         "tts_voice": os.getenv("LAFVIN_TTS_VOICE", "alloy"),
     }
+
+
+def _provider_is_configured(capability: str, provider: str) -> bool:
+    normalized = provider.strip().lower()
+    if normalized == "fake":
+        return True
+    if normalized == "openai-compatible" and capability != "LLM":
+        return False
+    key_name = _PROVIDER_API_KEYS.get(normalized)
+    if key_name is None or not os.getenv(key_name):
+        return False
+    if normalized == "openai-compatible":
+        return bool(os.getenv("LAFVIN_LLM_BASE_URL"))
+    return True
+
+
+def _llm_base_url(provider: str) -> str:
+    variable_and_default = _LLM_ENDPOINTS.get(provider.strip().lower())
+    if variable_and_default is None:
+        return ""
+    variable, default = variable_and_default
+    return os.getenv(variable) or default
 
 
 def _storage_state(data_dir: Path) -> dict[str, Any]:

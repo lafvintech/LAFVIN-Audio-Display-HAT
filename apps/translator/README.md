@@ -3,9 +3,10 @@
 Voice translator using Runtime-owned audio, shared ASR/LLM/TTS providers, and
 the app-facing Raw Frame UI toolkit.
 
-The provider must be configured explicitly. Missing credentials are displayed
-on the device. Use `LAFVIN_AI_PROVIDER=fake` only for an offline deterministic
-test.
+The three providers must be configured explicitly. Missing configuration or
+credentials are displayed on the device. Set `LAFVIN_ASR_PROVIDER`,
+`LAFVIN_LLM_PROVIDER`, and `LAFVIN_TTS_PROVIDER` to `fake` only for an offline
+deterministic test.
 
 Set `LAFVIN_TRANSLATOR_TARGET_LANGUAGE` before starting the Runtime to select
 the target language. The default is `English`.

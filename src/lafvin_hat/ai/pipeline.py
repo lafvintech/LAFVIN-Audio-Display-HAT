@@ -1,16 +1,34 @@
 from __future__ import annotations
 
 import asyncio
+import html
 import logging
+import os
+import re
 import time
+import unicodedata
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from pathlib import Path
 
-from .models import Message
+from .audio_normalization import AudioNormalizationError, pcm_wav_duration_ms
+from .models import Message, SpeechSegment
 from .providers import LLMProvider, TTSProvider
 
 
 logger = logging.getLogger(__name__)
+
+
+_MARKDOWN_IMAGE = re.compile(r"!\[([^\]]*)\]\([^)]*\)")
+_MARKDOWN_LINK = re.compile(r"\[([^\]]+)\]\([^)]*\)")
+_MARKDOWN_AUTOLINK = re.compile(r"<https?://[^>\s]+>", re.IGNORECASE)
+_RAW_URL = re.compile(r"https?://\S+", re.IGNORECASE)
+_HTML_TAG = re.compile(r"<[^>]+>")
+_FENCED_CODE_MARKER = re.compile(r"```(?:[A-Za-z0-9_+-]+)?")
+_MARKDOWN_SEPARATOR = re.compile(r"(?m)^[ \t]*(?:[-*_][ \t]*){3,}$")
+_MARKDOWN_LINE_PREFIX = re.compile(
+    r"(?m)^[ \t]{0,3}(?:#{1,6}[ \t]+|>[ \t]?|(?:[-+*]|\d+[.)])[ \t]+)"
+)
 
 
 class PipelineStageError(RuntimeError):
@@ -26,27 +44,68 @@ class PipelineStageError(RuntimeError):
         self.sequence = sequence
 
 
+@dataclass(frozen=True, slots=True)
+class SentencePart:
+    text: str
+    display_end: int
+
+
 class SentenceSplitter:
     def __init__(self) -> None:
         self._buffer = ""
+        self._buffer_start = 0
 
     def feed(self, text: str) -> list[str]:
+        return [part.text for part in self.feed_parts(text)]
+
+    def feed_parts(self, text: str) -> list[SentencePart]:
         self._buffer += text
-        result: list[str] = []
+        result: list[SentencePart] = []
         start = 0
         for index, char in enumerate(self._buffer):
-            if char in ".!?。！？\n":
-                sentence = self._buffer[start:index + 1].strip()
+            if char in ".!?。！？\n" and _is_sentence_boundary(
+                self._buffer,
+                index,
+                char,
+            ):
+                raw_sentence = self._buffer[start:index + 1]
+                sentence = raw_sentence.strip()
                 if sentence:
-                    result.append(sentence)
+                    trailing_whitespace = len(raw_sentence) - len(
+                        raw_sentence.rstrip()
+                    )
+                    result.append(
+                        SentencePart(
+                            sentence,
+                            self._buffer_start + index + 1 - trailing_whitespace,
+                        )
+                    )
                 start = index + 1
         self._buffer = self._buffer[start:]
+        self._buffer_start += start
         return result
 
     def flush(self) -> str | None:
-        value = self._buffer.strip()
+        part = self.flush_part()
+        return part.text if part is not None else None
+
+    def flush_part(self) -> SentencePart | None:
+        raw_sentence = self._buffer
+        value = raw_sentence.strip()
+        trailing_whitespace = len(raw_sentence) - len(raw_sentence.rstrip())
+        display_end = self._buffer_start + len(raw_sentence) - trailing_whitespace
+        self._buffer_start += len(raw_sentence)
         self._buffer = ""
-        return value or None
+        if not value:
+            return None
+        return SentencePart(value, display_end)
+
+
+@dataclass(frozen=True, slots=True)
+class _PendingSpeech:
+    display_text: str
+    speech_text: str
+    display_end: int
 
 
 class TTSQueue:
@@ -57,14 +116,20 @@ class TTSQueue:
         *,
         output_directory: Path,
         max_queue_size: int = 3,
+        on_playback_start: Callable[[SpeechSegment], Awaitable[None]] | None = None,
+        on_playback_end: (
+            Callable[[SpeechSegment, bool], Awaitable[None]] | None
+        ) = None,
     ) -> None:
         self._provider = provider
         self._play_audio = play_audio
         self._output_directory = output_directory
-        self._sentence_queue: asyncio.Queue[str | None] = asyncio.Queue(
+        self._on_playback_start = on_playback_start
+        self._on_playback_end = on_playback_end
+        self._sentence_queue: asyncio.Queue[_PendingSpeech | None] = asyncio.Queue(
             maxsize=max_queue_size
         )
-        self._audio_queue: asyncio.Queue[Path | None] = asyncio.Queue(
+        self._audio_queue: asyncio.Queue[SpeechSegment | None] = asyncio.Queue(
             maxsize=2
         )
         self._synthesis_task: asyncio.Task[None] | None = None
@@ -82,9 +147,27 @@ class TTSQueue:
                 name="tts-playback",
             )
 
-    async def put(self, sentence: str) -> None:
+    async def put(
+        self,
+        sentence: str,
+        *,
+        display_end: int | None = None,
+    ) -> None:
+        speech_text = prepare_text_for_speech(sentence)
+        if not speech_text:
+            logger.info(
+                "stage=tts_prepare event=skipped reason=no_speakable_text "
+                "source_chars=%s",
+                len(sentence),
+            )
+            return
+        pending_speech = _PendingSpeech(
+            display_text=sentence,
+            speech_text=speech_text,
+            display_end=len(sentence) if display_end is None else display_end,
+        )
         await self.start()
-        put_task = asyncio.create_task(self._sentence_queue.put(sentence))
+        put_task = asyncio.create_task(self._sentence_queue.put(pending_speech))
         workers = {
             task
             for task in (self._synthesis_task, self._playback_task)
@@ -113,9 +196,9 @@ class TTSQueue:
     async def finish(self) -> None:
         if self._synthesis_task is None or self._playback_task is None:
             return
-        await self._sentence_queue.put(None)
         tasks = (self._synthesis_task, self._playback_task)
         try:
+            await self._sentence_queue.put(None)
             done, pending = await asyncio.wait(
                 tasks,
                 return_when=asyncio.FIRST_EXCEPTION,
@@ -129,11 +212,11 @@ class TTSQueue:
                 None,
             )
             if failure is not None:
-                for task in pending:
-                    task.cancel()
-                await asyncio.gather(*pending, return_exceptions=True)
                 raise failure
             await asyncio.gather(*pending)
+        except BaseException:
+            await self._cancel_tasks(tasks)
+            raise
         finally:
             self._synthesis_task = None
             self._playback_task = None
@@ -144,21 +227,28 @@ class TTSQueue:
             for task in (self._synthesis_task, self._playback_task)
             if task is not None
         ]
-        for task in tasks:
-            task.cancel()
-        if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
+        await self._cancel_tasks(tasks)
         self._synthesis_task = None
         self._playback_task = None
         self._clear_queue(self._sentence_queue)
         self._clear_queue(self._audio_queue)
 
+    async def _cancel_tasks(
+        self,
+        tasks: tuple[asyncio.Task[None], ...] | list[asyncio.Task[None]],
+    ) -> None:
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+
     async def _synthesize(self) -> None:
         self._output_directory.mkdir(parents=True, exist_ok=True)
         try:
             while True:
-                sentence = await self._sentence_queue.get()
-                if sentence is None:
+                pending = await self._sentence_queue.get()
+                if pending is None:
                     return
                 self._sequence += 1
                 output = (
@@ -168,12 +258,19 @@ class TTSQueue:
                 logger.info(
                     "stage=tts_synthesize event=start sequence=%s chars=%s",
                     self._sequence,
-                    len(sentence),
+                    len(pending.speech_text),
                 )
+                if _content_logging_enabled():
+                    logger.info(
+                        "stage=tts_synthesize event=request_text "
+                        "sequence=%s text=%r",
+                        self._sequence,
+                        pending.speech_text,
+                    )
                 started_at = time.monotonic()
                 try:
                     result = await self._provider.synthesize(
-                        sentence,
+                        pending.speech_text,
                         output_path=output,
                     )
                 except Exception as exc:
@@ -191,7 +288,16 @@ class TTSQueue:
                     self._sequence,
                     int((time.monotonic() - started_at) * 1000),
                 )
-                await self._audio_queue.put(result.path)
+                await self._audio_queue.put(
+                    SpeechSegment(
+                        sequence=self._sequence,
+                        display_text=pending.display_text,
+                        speech_text=pending.speech_text,
+                        display_end=pending.display_end,
+                        path=result.path,
+                        duration_ms=_audio_duration_ms(result.path, result.duration_ms),
+                    )
+                )
         finally:
             current = asyncio.current_task()
             if current is None or not current.cancelling():
@@ -199,28 +305,77 @@ class TTSQueue:
 
     async def _play(self) -> None:
         while True:
-            path = await self._audio_queue.get()
-            if path is None:
+            segment = await self._audio_queue.get()
+            if segment is None:
                 return
-            sequence = _sequence_from_path(path)
             logger.info(
-                "stage=audio_playback event=start sequence=%s path=%s",
-                sequence,
-                path,
+                "stage=audio_playback event=start sequence=%s path=%s "
+                "expected_duration_ms=%s display_end=%s",
+                segment.sequence,
+                segment.path,
+                segment.duration_ms,
+                segment.display_end,
             )
-            started_at = time.monotonic()
+            completed = False
+            playback_duration_ms: int | None = None
             try:
-                await self._play_audio(path)
+                await self._notify_playback_start(segment)
+                started_at = time.monotonic()
+                await self._play_audio(segment.path)
+                completed = True
+                playback_duration_ms = int(
+                    (time.monotonic() - started_at) * 1000
+                )
+            except asyncio.CancelledError:
+                raise
             except Exception as exc:
                 raise PipelineStageError(
                     "audio_playback",
-                    f"Audio playback failed for sentence {sequence}: {exc}",
-                    sequence=sequence,
+                    (
+                        "Audio playback failed for sentence "
+                        f"{segment.sequence}: {exc}"
+                    ),
+                    sequence=segment.sequence,
                 ) from exc
+            finally:
+                await self._notify_playback_end(segment, completed)
             logger.info(
                 "stage=audio_playback event=done sequence=%s duration_ms=%s",
-                sequence,
-                int((time.monotonic() - started_at) * 1000),
+                segment.sequence,
+                playback_duration_ms,
+            )
+
+    async def _notify_playback_start(self, segment: SpeechSegment) -> None:
+        if self._on_playback_start is None:
+            return
+        try:
+            await self._on_playback_start(segment)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception(
+                "stage=playback_observer event=callback_failed "
+                "phase=start sequence=%s",
+                segment.sequence,
+            )
+
+    async def _notify_playback_end(
+        self,
+        segment: SpeechSegment,
+        completed: bool,
+    ) -> None:
+        if self._on_playback_end is None:
+            return
+        try:
+            await self._on_playback_end(segment, completed)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception(
+                "stage=playback_observer event=callback_failed "
+                "phase=end sequence=%s completed=%s",
+                segment.sequence,
+                completed,
             )
 
     def _clear_queue(self, queue: asyncio.Queue[object]) -> None:
@@ -245,12 +400,18 @@ class StreamingSpeechPipeline:
         play_audio: Callable[[Path], Awaitable[None]],
         output_directory: Path,
         text_flush_interval: float = 0.05,
+        on_playback_start: Callable[[SpeechSegment], Awaitable[None]] | None = None,
+        on_playback_end: (
+            Callable[[SpeechSegment, bool], Awaitable[None]] | None
+        ) = None,
     ) -> str:
         splitter = SentenceSplitter()
         queue = TTSQueue(
             self._tts,
             play_audio,
             output_directory=output_directory,
+            on_playback_start=on_playback_start,
+            on_playback_end=on_playback_end,
         )
         full_text = ""
         pending_text = ""
@@ -262,8 +423,16 @@ class StreamingSpeechPipeline:
                     if chunk.text:
                         full_text += chunk.text
                         pending_text += chunk.text
-                        for sentence in splitter.feed(chunk.text):
-                            await queue.put(sentence)
+                        parts = splitter.feed_parts(chunk.text)
+                        if parts and pending_text:
+                            await on_text(pending_text)
+                            pending_text = ""
+                            next_flush = time.monotonic() + text_flush_interval
+                        for part in parts:
+                            await queue.put(
+                                part.text,
+                                display_end=part.display_end,
+                            )
                         if (
                             text_flush_interval <= 0
                             or time.monotonic() >= next_flush
@@ -282,11 +451,19 @@ class StreamingSpeechPipeline:
                 "stage=llm_stream event=done chars=%s",
                 len(full_text),
             )
+            if _content_logging_enabled():
+                logger.info(
+                    "stage=llm_stream event=response_text text=%r",
+                    full_text,
+                )
             if pending_text:
                 await on_text(pending_text)
-            remainder = splitter.flush()
+            remainder = splitter.flush_part()
             if remainder:
-                await queue.put(remainder)
+                await queue.put(
+                    remainder.text,
+                    display_end=remainder.display_end,
+                )
             await queue.finish()
             return full_text
         except BaseException:
@@ -294,8 +471,64 @@ class StreamingSpeechPipeline:
             raise
 
 
-def _sequence_from_path(path: Path) -> int | None:
+def _audio_duration_ms(path: Path, declared_duration_ms: int | None) -> int | None:
+    if declared_duration_ms is not None and declared_duration_ms > 0:
+        return declared_duration_ms
     try:
-        return int(path.stem.rsplit("-", 1)[1])
-    except (IndexError, ValueError):
+        return pcm_wav_duration_ms(path)
+    except AudioNormalizationError as exc:
+        logger.warning(
+            "stage=audio_playback event=duration_unavailable path=%s "
+            "error_type=%s",
+            path,
+            type(exc).__name__,
+        )
         return None
+
+
+def prepare_text_for_speech(text: str) -> str:
+    """Remove Markdown presentation syntax without changing displayed text."""
+    value = html.unescape(text)
+    value = _MARKDOWN_IMAGE.sub(lambda match: match.group(1), value)
+    value = _MARKDOWN_LINK.sub(lambda match: match.group(1), value)
+    value = _MARKDOWN_AUTOLINK.sub(" ", value)
+    value = _RAW_URL.sub(" ", value)
+    value = _HTML_TAG.sub(" ", value)
+    value = _FENCED_CODE_MARKER.sub(" ", value)
+    value = _MARKDOWN_SEPARATOR.sub(" ", value)
+    value = _MARKDOWN_LINE_PREFIX.sub("", value)
+    value = value.replace("**", " ").replace("__", " ")
+    value = value.replace("~~", " ").replace("`", "")
+    value = re.sub(r"(?<!\w)[*_](?=\w)", "", value)
+    value = re.sub(r"(?<=\w)[*_](?!\w)", "", value)
+    value = value.replace("|", " ")
+    value = "".join(
+        " " if unicodedata.category(char) in {"So", "Sk"} else char
+        for char in value
+    )
+    value = re.sub(r"\s+", " ", value).strip()
+    if not any(char.isalnum() for char in value):
+        return ""
+    return value
+
+
+def _is_sentence_boundary(text: str, index: int, char: str) -> bool:
+    if char != ".":
+        return True
+    previous = text[index - 1] if index > 0 else ""
+    following = text[index + 1] if index + 1 < len(text) else ""
+    if previous.isalnum() and following.isalnum():
+        return False
+    line_start = text.rfind("\n", 0, index) + 1
+    if re.fullmatch(r"[ \t]*\d+\.", text[line_start:index + 1]):
+        return False
+    return True
+
+
+def _content_logging_enabled() -> bool:
+    return os.getenv("LAFVIN_AI_LOG_CONTENT", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import random
 import time
 
 from lafvin_hat.sdk import DeviceApp
@@ -21,13 +22,27 @@ WHITE = 0xFFFF
 PANEL = 0x2104
 HIGHLIGHT = 0x3A7F
 MUTED = 0x8C71
+OBSTACLE_WIDTH = 18
+OBSTACLE_SPAWN_OFFSET_MIN = 0
+OBSTACLE_SPAWN_OFFSET_MAX = 20
+OBSTACLE_SPACING_MIN = 160
+OBSTACLE_SPACING_MAX = 260
+BASE_OBSTACLE_SPEED = 85.0
+SPEEDUP_SCORE_30_PERCENT = 15
+SPEEDUP_SCORE_50_PERCENT = 30
+HUD_SCORE_X = 20
+GAME_OVER_SCORE_Y = 113
+GAME_OVER_SCORE_SCALE = 3
+GAME_OVER_OPTIONS = (("CONTINUE", 140), ("EXIT", 168))
 
 
 class Game:
-    def __init__(self) -> None:
+    def __init__(self, rng: random.Random | None = None) -> None:
+        self._rng = rng or random.Random()
         self.player_y = 220.0
         self.velocity = 0.0
-        self.obstacle_x = float(WIDTH)
+        self.obstacles = [self._next_obstacle_x()]
+        self._distance_until_next_obstacle = self._next_obstacle_spacing()
         self.score = 0
         self.game_over = False
         self.jump_requested = False
@@ -59,14 +74,27 @@ class Game:
         self.player_y = min(220.0, self.player_y + self.velocity * elapsed)
         if self.player_y >= 220:
             self.velocity = 0.0
-        self.obstacle_x -= (85.0 + min(self.score, 20) * 2) * elapsed
-        if self.obstacle_x < -18:
-            self.obstacle_x = float(WIDTH + 20)
-            self.score += 1
-        if (
-            self.obstacle_x < 55
-            and self.obstacle_x + 18 > 30
-            and self.player_y + 20 > 220
+        travelled = self.obstacle_speed() * elapsed
+        self.obstacles = [position - travelled for position in self.obstacles]
+        passed = sum(
+            position < -OBSTACLE_WIDTH for position in self.obstacles
+        )
+        if passed:
+            self.score += passed
+            self.obstacles = [
+                position
+                for position in self.obstacles
+                if position >= -OBSTACLE_WIDTH
+            ]
+
+        self._distance_until_next_obstacle -= travelled
+        while self._distance_until_next_obstacle <= 0:
+            self.obstacles.append(self._next_obstacle_x())
+            self._distance_until_next_obstacle += self._next_obstacle_spacing()
+
+        if self.player_y + 20 > 220 and any(
+            position < 55 and position + OBSTACLE_WIDTH > 30
+            for position in self.obstacles
         ):
             self.game_over = True
 
@@ -80,13 +108,40 @@ class Game:
             self.menu_selected = 1 - self.menu_selected
             self._menu_pending_release_at = None
 
+    def _next_obstacle_x(self) -> float:
+        offset = self._rng.randint(
+            OBSTACLE_SPAWN_OFFSET_MIN,
+            OBSTACLE_SPAWN_OFFSET_MAX,
+        )
+        return float(WIDTH + offset)
+
+    def _next_obstacle_spacing(self) -> float:
+        return float(
+            self._rng.randint(OBSTACLE_SPACING_MIN, OBSTACLE_SPACING_MAX)
+        )
+
+    def obstacle_speed(self) -> float:
+        if self.score >= SPEEDUP_SCORE_50_PERCENT:
+            return BASE_OBSTACLE_SPEED * 1.5
+        if self.score >= SPEEDUP_SCORE_30_PERCENT:
+            return BASE_OBSTACLE_SPEED * 1.3
+        return BASE_OBSTACLE_SPEED
+
 
 def rgb565_frame(game: Game) -> bytes:
     pixels = bytearray(_color_bytes(BACKGROUND) * (WIDTH * HEIGHT))
     _rect(pixels, 0, 240, WIDTH, 40, GROUND)
     _rect(pixels, 30, int(game.player_y), 25, 20, PLAYER)
-    _rect(pixels, int(game.obstacle_x), 210, 18, 30, OBSTACLE)
-    _number(pixels, 8, 8, game.score, WHITE)
+    for obstacle_x in game.obstacles:
+        _rect(
+            pixels,
+            int(obstacle_x),
+            210,
+            OBSTACLE_WIDTH,
+            30,
+            OBSTACLE,
+        )
+    _number(pixels, HUD_SCORE_X, 8, game.score, WHITE)
     if game.game_over:
         _game_over_menu(pixels, game)
     return bytes(pixels)
@@ -96,9 +151,15 @@ def _game_over_menu(pixels: bytearray, game: Game) -> None:
     _rect(pixels, 24, 72, 192, 132, PANEL)
     _text(pixels, 55, 88, "GAME OVER", WHITE, scale=3)
     _text(pixels, 55, 116, "SCORE", MUTED, scale=2)
-    _number(pixels, 125, 113, game.score, WHITE, scale=3)
-    options = [("CONTINUE", 122), ("EXIT", 150)]
-    for index, (label, y) in enumerate(options):
+    _number(
+        pixels,
+        125,
+        GAME_OVER_SCORE_Y,
+        game.score,
+        WHITE,
+        scale=GAME_OVER_SCORE_SCALE,
+    )
+    for index, (label, y) in enumerate(GAME_OVER_OPTIONS):
         if index == game.menu_selected:
             _rect(pixels, 45, y - 5, 150, 23, HIGHLIGHT)
             color = WHITE

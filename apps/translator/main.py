@@ -340,15 +340,26 @@ async def main() -> None:
                     name="translator-turn",
                 )
     finally:
-        if hold_task is not None:
-            hold_task.cancel()
-            await asyncio.gather(hold_task, return_exceptions=True)
-        if pending_click_task is not None:
-            pending_click_task.cancel()
-            await asyncio.gather(pending_click_task, return_exceptions=True)
-        if turn_task is not None:
-            await _cancel_turn(app, turn_task)
-        await app.close()
+        logger.info("event=app_stopping")
+        try:
+            if hold_task is not None:
+                hold_task.cancel()
+                await asyncio.gather(hold_task, return_exceptions=True)
+            if pending_click_task is not None:
+                pending_click_task.cancel()
+                await asyncio.gather(pending_click_task, return_exceptions=True)
+            if turn_task is not None:
+                await _cancel_turn(app, turn_task)
+        finally:
+            try:
+                await providers.aclose()
+            except Exception as exc:
+                logger.exception(
+                    "stage=provider_shutdown event=failed error_type=%s",
+                    type(exc).__name__,
+                )
+            finally:
+                await app.close()
 
 
 async def _run_translation(
@@ -373,7 +384,8 @@ async def _run_translation(
                 "system",
                 (
                     f"Translate the user's message into {TARGET_LANGUAGE}. "
-                    "Return only the translation, without explanation."
+                    "Return only the plain-text translation, without explanation "
+                    "or Markdown formatting."
                 ),
             ),
             Message("user", transcript),

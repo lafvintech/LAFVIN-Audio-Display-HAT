@@ -12,6 +12,7 @@ from lafvin_hat.ai import (
     ASRProvider,
     Message,
     PipelineStageError,
+    SpeechSegment,
     StreamingSpeechPipeline,
     configure_ai_logging,
     providers_from_environment,
@@ -23,7 +24,11 @@ from lafvin_hat.ui import Canvas, ChatMessage
 TITLE = "AI Chatbot"
 SYSTEM_PROMPT = os.getenv(
     "LAFVIN_CHATBOT_SYSTEM_PROMPT",
-    "You are a concise and helpful assistant for a small portable device.",
+    (
+        "You are a concise and helpful assistant for a small portable device. "
+        "Respond in plain text without Markdown formatting because your answer "
+        "will be spoken aloud."
+    ),
 )
 MAX_HISTORY_MESSAGES = 12
 ACTION_TALK = 0
@@ -32,6 +37,8 @@ CLICK_INTERVAL_SEC = 0.35
 HOLD_THRESHOLD_SEC = 0.45
 logger = logging.getLogger("lafvin_hat.app.chatbot")
 CONTROL_LABELS = ["Talk", "Back"]
+DISPLAY_MAX_FPS = 12
+SCROLL_FOCUS_RATIO = 0.65
 
 
 class ChatbotDisplay:
@@ -45,12 +52,27 @@ class ChatbotDisplay:
             "emphasis": "primary",
             "actions": True,
         }
+        self._scroll_top = 0.0
+        self._answer_revision = 0
+        self._scroll_task: asyncio.Task[None] | None = None
+        self._scroll_sequence: int | None = None
+        self._scroll_started_at: float | None = None
+        self._render_event = asyncio.Event()
+        self._render_condition = asyncio.Condition()
+        self._render_worker: asyncio.Task[None] | None = None
+        self._render_requested = 0
+        self._render_completed = 0
+        self._render_error: tuple[int, Exception] | None = None
+        self._last_render_at = 0.0
+        self._closed = False
 
     async def set_selected(self, index: int) -> None:
         self.selected = index
         await self.render()
 
     async def show_idle(self) -> None:
+        await self._stop_speech_sync()
+        self._scroll_top = 0.0
         self._state = {
             "kind": "text",
             "text": "Hold the button and speak.",
@@ -61,6 +83,8 @@ class ChatbotDisplay:
         await self.render()
 
     async def show_listening(self) -> None:
+        await self._stop_speech_sync()
+        self._scroll_top = 0.0
         self._state = {
             "kind": "text",
             "text": "Listening... release to send.",
@@ -71,6 +95,8 @@ class ChatbotDisplay:
         await self.render()
 
     async def show_status(self, text: str, status: str) -> None:
+        await self._stop_speech_sync()
+        self._scroll_top = 0.0
         self._state = {
             "kind": "text",
             "text": text,
@@ -81,6 +107,8 @@ class ChatbotDisplay:
         await self.render()
 
     async def show_error(self, error: Exception) -> None:
+        await self._stop_speech_sync()
+        self._scroll_top = 0.0
         self._state = {
             "kind": "text",
             "text": f"Request failed: {str(error)[:240]}",
@@ -91,6 +119,8 @@ class ChatbotDisplay:
         await self.render()
 
     async def show_audio_error(self, action: str, error: Exception) -> None:
+        await self._stop_speech_sync()
+        self._scroll_top = 0.0
         self._state = {
             "kind": "text",
             "text": f"Recording {action} failed: {str(error)[:210]}",
@@ -101,12 +131,27 @@ class ChatbotDisplay:
         await self.render()
 
     async def show_configuration_error(self, error: Exception) -> None:
+        await self._stop_speech_sync()
+        self._scroll_top = 0.0
         self._state = {
             "kind": "text",
             "text": f"AI configuration error: {str(error)[:220]}",
             "status": "error",
             "emphasis": "danger",
             "actions": False,
+        }
+        await self.render()
+
+    async def show_question(self, text: str) -> None:
+        await self._stop_speech_sync()
+        self._scroll_top = 0.0
+        self._answer_revision = 0
+        self._state = {
+            "kind": "question",
+            "text": text,
+            "status": "thinking",
+            "emphasis": "primary",
+            "actions": True,
         }
         await self.render()
 
@@ -117,6 +162,8 @@ class ChatbotDisplay:
         status: str = "answering",
         streaming: bool = True,
     ) -> None:
+        await self._stop_speech_sync()
+        self._scroll_top = 0.0
         self._state = {
             "kind": "chat",
             "status": status,
@@ -129,8 +176,26 @@ class ChatbotDisplay:
         }
         await self.render()
 
+    async def append_answer_text(self, text: str) -> None:
+        if not text:
+            return
+        if self._state.get("kind") != "answer":
+            self._scroll_top = 0.0
+            self._answer_revision = 0
+            self._state = {
+                "kind": "answer",
+                "text": "",
+                "status": "answering",
+                "streaming": True,
+                "actions": True,
+            }
+        self._state["text"] = str(self._state.get("text", "")) + text
+        self._answer_revision += 1
+        await self.render()
+
     async def append_assistant_text(self, text: str) -> None:
         if self._state.get("kind") != "chat":
+            await self.append_answer_text(text)
             return
         messages = self._state.get("messages")
         if not isinstance(messages, list) or not messages:
@@ -145,12 +210,169 @@ class ChatbotDisplay:
         await self.render()
 
     async def finish_chat(self) -> None:
+        if self._state.get("kind") == "answer":
+            await self.finish_answer()
+            return
         if self._state.get("kind") == "chat":
             self._state["status"] = "idle"
             self._state["streaming"] = False
             await self.render()
 
+    async def finish_answer(self) -> None:
+        if self._state.get("kind") != "answer":
+            return
+        self._state["status"] = "idle"
+        self._state["streaming"] = False
+        await self.render()
+
+    async def start_speech_segment(self, segment: SpeechSegment) -> None:
+        await self._stop_speech_sync()
+        if self._state.get("kind") != "answer":
+            logger.info(
+                "stage=display_sync event=disabled reason=answer_not_visible "
+                "sequence=%s",
+                segment.sequence,
+            )
+            return
+        if segment.duration_ms is None or segment.duration_ms <= 0:
+            logger.info(
+                "stage=display_sync event=disabled reason=missing_duration "
+                "sequence=%s",
+                segment.sequence,
+            )
+            return
+        target = self._scroll_target(segment.display_end)
+        if target <= self._scroll_top + 0.5:
+            logger.info(
+                "stage=display_sync event=skipped reason=no_scroll "
+                "sequence=%s char_end=%s",
+                segment.sequence,
+                segment.display_end,
+            )
+            return
+        self._scroll_sequence = segment.sequence
+        self._scroll_started_at = time.monotonic()
+        logger.info(
+            "stage=display_sync event=start sequence=%s char_end=%s "
+            "duration_ms=%s start_y=%s target_y=%s",
+            segment.sequence,
+            segment.display_end,
+            segment.duration_ms,
+            round(self._scroll_top, 1),
+            round(target, 1),
+        )
+        self._scroll_task = asyncio.create_task(
+            self._animate_speech_segment(segment),
+            name=f"chatbot-scroll-{segment.sequence}",
+        )
+
+    async def finish_speech_segment(
+        self,
+        segment: SpeechSegment,
+        completed: bool,
+    ) -> None:
+        if self._scroll_sequence != segment.sequence:
+            return
+        finished_at = time.monotonic()
+        task = self._scroll_task
+        self._scroll_task = None
+        if task is not None and not task.done():
+            task.cancel()
+        if task is not None and task is not asyncio.current_task():
+            await asyncio.gather(task, return_exceptions=True)
+
+        started_at = self._scroll_started_at
+        self._scroll_sequence = None
+        self._scroll_started_at = None
+        if not completed:
+            logger.info(
+                "stage=display_sync event=cancelled sequence=%s",
+                segment.sequence,
+            )
+            return
+
+        target = self._scroll_target(segment.display_end)
+        if target > self._scroll_top + 0.5:
+            self._scroll_top = target
+            await self.render()
+        actual_ms = (
+            int((finished_at - started_at) * 1000)
+            if started_at is not None
+            else None
+        )
+        drift_ms = (
+            actual_ms - segment.duration_ms
+            if actual_ms is not None and segment.duration_ms is not None
+            else None
+        )
+        logger.info(
+            "stage=display_sync event=done sequence=%s actual_ms=%s drift_ms=%s "
+            "target_y=%s",
+            segment.sequence,
+            actual_ms,
+            drift_ms,
+            round(self._scroll_top, 1),
+        )
+
+    async def close(self) -> None:
+        if self._closed:
+            return
+        await self._stop_speech_sync()
+        self._closed = True
+        self._render_event.set()
+        async with self._render_condition:
+            self._render_condition.notify_all()
+        worker = self._render_worker
+        if worker is not None and worker is not asyncio.current_task():
+            await asyncio.gather(worker, return_exceptions=True)
+        self._render_worker = None
+
     async def render(self) -> None:
+        if self._closed:
+            return
+        self._render_requested += 1
+        requested = self._render_requested
+        if self._render_worker is None or self._render_worker.done():
+            self._render_worker = asyncio.create_task(
+                self._run_render_worker(),
+                name="chatbot-display",
+            )
+        self._render_event.set()
+        async with self._render_condition:
+            await self._render_condition.wait_for(
+                lambda: self._render_completed >= requested or self._closed
+            )
+        error = self._render_error
+        if error is not None and requested <= error[0]:
+            raise error[1]
+
+    async def _run_render_worker(self) -> None:
+        interval = 1 / DISPLAY_MAX_FPS
+        while not self._closed:
+            await self._render_event.wait()
+            self._render_event.clear()
+            if self._closed:
+                break
+            if self._render_completed >= self._render_requested:
+                continue
+            remaining = interval - (time.monotonic() - self._last_render_at)
+            if remaining > 0:
+                await asyncio.sleep(remaining)
+            requested = self._render_requested
+            try:
+                await self._render_once()
+            except Exception as exc:
+                self._render_error = (requested, exc)
+            else:
+                self._render_error = None
+            self._last_render_at = time.monotonic()
+            async with self._render_condition:
+                self._render_completed = max(self._render_completed, requested)
+                self._render_condition.notify_all()
+            if self._render_requested > self._render_completed:
+                self._render_event.set()
+
+    async def _render_once(self) -> None:
         canvas = Canvas(width=self.frame.width, height=self.frame.height)
         actions = CONTROL_LABELS if self._state.get("actions", True) else None
         if self._state.get("kind") == "chat":
@@ -159,6 +381,15 @@ class ChatbotDisplay:
                 self._state.get("messages", []),
                 status=self._state.get("status"),
                 streaming=bool(self._state.get("streaming")),
+                actions=actions,
+                selected=self.selected,
+            )
+        elif self._state.get("kind") == "answer":
+            canvas.scrolling_text_page(
+                TITLE,
+                str(self._state.get("text", "")),
+                scroll_top=self._scroll_top,
+                status=self._state.get("status"),
                 actions=actions,
                 selected=self.selected,
             )
@@ -172,6 +403,61 @@ class ChatbotDisplay:
                 emphasis=str(self._state.get("emphasis", "primary")),
             )
         await canvas.present(self.frame)
+
+    async def _animate_speech_segment(self, segment: SpeechSegment) -> None:
+        assert segment.duration_ms is not None
+        duration_sec = segment.duration_ms / 1000
+        started_at = self._scroll_started_at or time.monotonic()
+        start_top = self._scroll_top
+        revision = -1
+        target = start_top
+        try:
+            while True:
+                elapsed = time.monotonic() - started_at
+                progress = min(1.0, max(0.0, elapsed / duration_sec))
+                if revision != self._answer_revision:
+                    revision = self._answer_revision
+                    target = max(start_top, self._scroll_target(segment.display_end))
+                next_top = start_top + (target - start_top) * progress
+                if abs(next_top - self._scroll_top) >= 0.5:
+                    self._scroll_top = next_top
+                    await self.render()
+                if progress >= 1.0:
+                    return
+                await asyncio.sleep(1 / DISPLAY_MAX_FPS)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception(
+                "stage=display_sync event=animation_failed sequence=%s",
+                segment.sequence,
+            )
+
+    def _scroll_target(self, char_end: int) -> float:
+        if self._state.get("kind") != "answer":
+            return 0.0
+        canvas = Canvas(width=self.frame.width, height=self.frame.height)
+        text_y = 70 if self._state.get("status") else 58
+        content_height = self.frame.height - text_y - (
+            58 if self._state.get("actions", True) else 14
+        )
+        return canvas.text_scroll_target(
+            str(self._state.get("text", "")),
+            char_end,
+            width=self.frame.width - 44,
+            height=content_height,
+            focus_ratio=SCROLL_FOCUS_RATIO,
+        )
+
+    async def _stop_speech_sync(self) -> None:
+        task = self._scroll_task
+        self._scroll_task = None
+        self._scroll_sequence = None
+        self._scroll_started_at = None
+        if task is not None and not task.done():
+            task.cancel()
+        if task is not None and task is not asyncio.current_task():
+            await asyncio.gather(task, return_exceptions=True)
 
 
 async def main() -> None:
@@ -196,7 +482,10 @@ async def main() -> None:
         logger.exception("event=configuration_invalid")
         await display.show_configuration_error(exc)
         await _wait_for_exit(app)
-        await app.close()
+        try:
+            await display.close()
+        finally:
+            await app.close()
         return
     pipeline = StreamingSpeechPipeline(providers.llm, providers.tts)
     history: list[Message] = []
@@ -355,15 +644,28 @@ async def main() -> None:
                 )
     finally:
         logger.info("event=app_stopping")
-        if hold_task is not None:
-            hold_task.cancel()
-            await asyncio.gather(hold_task, return_exceptions=True)
-        if pending_click_task is not None:
-            pending_click_task.cancel()
-            await asyncio.gather(pending_click_task, return_exceptions=True)
-        if turn_task is not None:
-            await _cancel_turn(app, turn_task)
-        await app.close()
+        try:
+            if hold_task is not None:
+                hold_task.cancel()
+                await asyncio.gather(hold_task, return_exceptions=True)
+            if pending_click_task is not None:
+                pending_click_task.cancel()
+                await asyncio.gather(pending_click_task, return_exceptions=True)
+            if turn_task is not None:
+                await _cancel_turn(app, turn_task)
+        finally:
+            try:
+                await providers.aclose()
+            except Exception as exc:
+                logger.exception(
+                    "stage=provider_shutdown event=failed error_type=%s",
+                    type(exc).__name__,
+                )
+            finally:
+                try:
+                    await display.close()
+                finally:
+                    await app.close()
 
 
 async def _run_turn(
@@ -397,14 +699,22 @@ async def _run_turn(
             *history,
             Message("user", transcript),
         ]
-        visible = [*history[-5:], Message("user", transcript)]
-        await display.show_chat([*visible, Message("assistant", "")])
+        await display.show_question(transcript)
 
         async def on_text(text: str) -> None:
-            await display.append_assistant_text(text)
+            await display.append_answer_text(text)
 
         async def play_audio(path: Path) -> None:
             await app.audio.play_file(path)
+
+        async def on_playback_start(segment: SpeechSegment) -> None:
+            await display.start_speech_segment(segment)
+
+        async def on_playback_end(
+            segment: SpeechSegment,
+            completed: bool,
+        ) -> None:
+            await display.finish_speech_segment(segment, completed)
 
         response = await pipeline.run(
             prompt,
@@ -412,6 +722,8 @@ async def _run_turn(
             play_audio=play_audio,
             output_directory=Path(".runtime") / "chatbot-tts",
             text_flush_interval=0.12,
+            on_playback_start=on_playback_start,
+            on_playback_end=on_playback_end,
         )
         if not response.strip():
             raise RuntimeError("The language model returned an empty response")
@@ -429,7 +741,7 @@ async def _run_turn(
             len(response),
             len(history),
         )
-        await display.finish_chat()
+        await display.finish_answer()
     except asyncio.CancelledError:
         logger.info("event=turn_cancelled")
         raise

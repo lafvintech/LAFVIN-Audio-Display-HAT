@@ -276,6 +276,41 @@ class Canvas:
             self.action_bar(actions, selected=selected)
         return self
 
+    def scrolling_text_page(
+        self,
+        title: str,
+        text: str,
+        *,
+        scroll_top: float = 0,
+        status: str | None = None,
+        actions: Sequence[str] | None = None,
+        selected: int | None = None,
+        emphasis: str = "primary",
+    ) -> "Canvas":
+        self.clear().title(title).divider()
+        current_y = 58
+        if status:
+            self.draw.text(
+                (22, 48),
+                _display_status(status),
+                fill=self._emphasis_fill(emphasis, muted_default=True),
+                font=self.small_font,
+            )
+            current_y = 70
+        content_height = self.height - current_y - (58 if actions else 14)
+        self.text_box(
+            text,
+            x=22,
+            y=current_y,
+            width=self.width - 44,
+            height=content_height,
+            fill=self._emphasis_fill(emphasis),
+            scroll_top=scroll_top,
+        )
+        if actions:
+            self.action_bar(actions, selected=selected)
+        return self
+
     def text_box(
         self,
         text: str,
@@ -288,19 +323,62 @@ class Canvas:
         fill: tuple[int, int, int] | None = None,
         font: ImageFont.ImageFont | None = None,
         scroll_to_bottom: bool = False,
+        scroll_top: float = 0,
     ) -> "Canvas":
         active_font = font or self.body_font
         active_fill = fill or self.theme.text
         lines = self.wrap(text, active_font, width)
         max_lines = max(1, height // line_height)
-        visible_lines = lines[-max_lines:] if scroll_to_bottom else lines[:max_lines]
-        current_y = y
+        if scroll_to_bottom:
+            visible_lines = lines[-max_lines:]
+            offset_y = 0
+        else:
+            normalized_scroll = max(0, int(scroll_top))
+            first_line = min(len(lines), normalized_scroll // line_height)
+            offset_y = -(normalized_scroll % line_height)
+            visible_lines = lines[
+                first_line:first_line + max_lines + (1 if offset_y else 0)
+            ]
+
+        viewport = Image.new("RGB", (width, height), self.theme.background)
+        viewport_draw = ImageDraw.Draw(viewport)
+        current_y = offset_y
         for line in visible_lines:
-            if current_y + line_height > y + height:
+            if current_y >= height:
                 break
-            self.draw.text((x, current_y), line, fill=active_fill, font=active_font)
+            viewport_draw.text(
+                (0, current_y),
+                line,
+                fill=active_fill,
+                font=active_font,
+            )
             current_y += line_height
+        self.image.paste(viewport, (x, y))
         return self
+
+    def text_scroll_target(
+        self,
+        text: str,
+        char_end: int,
+        *,
+        width: int,
+        height: int,
+        line_height: int = 24,
+        focus_ratio: float = 0.65,
+        font: ImageFont.ImageFont | None = None,
+    ) -> float:
+        if char_end <= 0 or height <= 0:
+            return 0.0
+        active_font = font or self.body_font
+        value = str(text)
+        lines = self.wrap(value, active_font, width)
+        prefix = value[:min(len(value), char_end)]
+        prefix_lines = self.wrap(prefix, active_font, width)
+        target_line = max(0, len(prefix_lines) - 1)
+        content_height = len(lines) * line_height
+        max_scroll = max(0, content_height - height)
+        desired = target_line * line_height - int(height * focus_ratio)
+        return float(min(max_scroll, max(0, desired)))
 
     def message_list(
         self,

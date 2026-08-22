@@ -51,8 +51,11 @@ def test_system_status_collects_non_secret_state(
     monkeypatch,
 ) -> None:
     async def scenario() -> None:
-        monkeypatch.setenv("OPENAI_API_KEY", "sk-secret")
-        monkeypatch.setenv("LAFVIN_AI_PROVIDER", "openai-compatible")
+        monkeypatch.setenv("LAFVIN_ASR_PROVIDER", "fake")
+        monkeypatch.setenv("LAFVIN_LLM_PROVIDER", "openai-compatible")
+        monkeypatch.setenv("LAFVIN_TTS_PROVIDER", "fake")
+        monkeypatch.setenv("LAFVIN_LLM_API_KEY", "sk-secret")
+        monkeypatch.setenv("LAFVIN_LLM_BASE_URL", "https://llm.example/v1")
         monkeypatch.setenv("LAFVIN_LLM_MODEL", "gpt-test")
         monkeypatch.setattr(
             "lafvin_hat.runtime.status.service._primary_ip_address",
@@ -82,6 +85,8 @@ def test_system_status_collects_non_secret_state(
         assert isinstance(result["storage"]["used_bytes"], int)
         assert isinstance(result["storage"]["total_bytes"], int)
         assert result["ai"]["configured"] is True
+        assert result["ai"]["provider"] == "mixed"
+        assert result["ai"]["base_url_host"] == "llm.example"
         assert result["ai"]["llm_model"] == "gpt-test"
         assert "sk-secret" not in repr(result)
 

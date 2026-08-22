@@ -140,6 +140,37 @@ def test_status_display_capitalizes_only_the_first_character() -> None:
     assert toolkit_module._display_status("") == ""
 
 
+def test_scrolling_text_target_stays_still_for_short_text_and_reaches_tail(
+) -> None:
+    canvas = Canvas(width=240, height=280)
+    viewport_height = 280 - 70 - 58
+
+    assert canvas.text_scroll_target(
+        "Short answer.",
+        len("Short answer."),
+        width=196,
+        height=viewport_height,
+    ) == 0
+
+    long_answer = "\n".join(f"line {index}" for index in range(20))
+    target = canvas.text_scroll_target(
+        long_answer,
+        len(long_answer),
+        width=196,
+        height=viewport_height,
+    )
+
+    assert target == 20 * 24 - viewport_height
+    rendered = canvas.scrolling_text_page(
+        "Chatbot",
+        long_answer,
+        scroll_top=target,
+        status="answering",
+        actions=["Talk", "Back"],
+    ).render()
+    assert len(rendered) == 240 * 280 * 2
+
+
 def test_assistant_hangul_reply_uses_one_korean_body_font() -> None:
     canvas = Canvas(width=240, height=280)
     assistant = canvas._message_block(

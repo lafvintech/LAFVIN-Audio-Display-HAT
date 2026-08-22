@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import sys
 from pathlib import Path
 
@@ -10,6 +11,7 @@ from lafvin_hat.runtime.config import RuntimeEndpoint
 from lafvin_hat.runtime.audio.backends import LinuxAudioBackend
 from lafvin_hat.runtime.backends import LafvinHatBackend
 from lafvin_hat.runtime.ipc.server import RuntimeServer
+from lafvin_hat.runtime.ipc.protocol import encode_message
 from lafvin_hat.runtime.system_apps import HARDWARE_TEST_APP_ID
 from lafvin_hat.sdk import RuntimeClient, RuntimeClientError
 
@@ -35,6 +37,60 @@ def test_runtime_ping_over_tcp() -> None:
         }
 
     asyncio.run(scenario())
+
+
+def test_runtime_ignores_client_disconnect_while_writing_response(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    class DisconnectingWriter:
+        def __init__(self) -> None:
+            self.writes: list[bytes] = []
+            self.closed = False
+
+        def write(self, value: bytes) -> None:
+            self.writes.append(value)
+
+        async def drain(self) -> None:
+            raise ConnectionResetError("Connection lost")
+
+        def close(self) -> None:
+            self.closed = True
+
+        async def wait_closed(self) -> None:
+            return None
+
+    async def scenario() -> DisconnectingWriter:
+        server = RuntimeServer(
+            RuntimeEndpoint(kind="tcp", host="127.0.0.1", port=0)
+        )
+        reader = asyncio.StreamReader()
+        reader.feed_data(
+            encode_message(
+                {
+                    "version": 1,
+                    "id": "cancelled-request",
+                    "type": "request",
+                    "method": "runtime.ping",
+                    "params": {},
+                }
+            )
+        )
+        reader.feed_eof()
+        writer = DisconnectingWriter()
+
+        await server._handle_client(reader, writer)  # type: ignore[arg-type]
+        return writer
+
+    caplog.set_level(logging.DEBUG, logger="lafvin_hat.runtime")
+    writer = asyncio.run(scenario())
+
+    assert writer.writes
+    assert writer.closed is True
+    assert (
+        "stage=ipc event=client_disconnected phase=response_write "
+        "request_id=cancelled-request error_type=ConnectionResetError"
+        in caplog.text
+    )
 
 
 def test_lafvin_hat_backend_selects_linux_audio_without_name_matching() -> None:

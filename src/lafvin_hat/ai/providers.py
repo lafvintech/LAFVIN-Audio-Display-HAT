@@ -25,3 +25,9 @@ class TTSProvider(Protocol):
         *,
         output_path: str | Path | None = None,
     ) -> AudioResult: ...
+
+
+async def aclose_provider(provider: object) -> None:
+    close = getattr(provider, "aclose", None)
+    if close is not None:
+        await close()

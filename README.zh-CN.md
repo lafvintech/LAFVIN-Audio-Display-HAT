@@ -22,7 +22,7 @@ LAFVIN Audio Display HAT 是一套面向 Raspberry Pi 的便携式音频与显�
 
 ## 版本与许可证
 
-当前公开预发布版本为 `0.3.0b1`。
+当前公开预发布版本为 `0.3.0b2`。
 
 除非组件自己的许可证另有说明，项目源代码和项目创建的测试媒体使用
 [Apache License 2.0](LICENSE)。重新分发本项目或设备镜像前，请阅读
@@ -113,7 +113,7 @@ pytest
 | --- | --- |
 | `dev` | 使用 `pytest` 运行自动化测试 |
 | `hardware` | 安装 `spidev` 和 `gpiod` |
-| `ai` | 安装 OpenAI-compatible Provider 支持 |
+| `ai` | 安装云端 ASR、LLM 和 TTS Provider 支持 |
 
 ### 5. 配置开发模式
 
@@ -122,25 +122,108 @@ cp .env.example .env
 nano .env
 ```
 
-使用真实 OpenAI-compatible Provider：
+三种能力需要独立选择。下面是全部使用 OpenAI 的配置：
 
 ```ini
-LAFVIN_AI_PROVIDER=openai-compatible
+LAFVIN_ASR_PROVIDER=openai
+LAFVIN_LLM_PROVIDER=openai
+LAFVIN_TTS_PROVIDER=openai
 OPENAI_API_KEY=替换为你的API_KEY
-OPENAI_BASE_URL=https://api.openai.com/v1
 LAFVIN_ASR_MODEL=whisper-1
 LAFVIN_LLM_MODEL=gpt-4o-mini
 LAFVIN_TTS_MODEL=tts-1
 LAFVIN_TTS_VOICE=alloy
 ```
 
+内置 Provider 的能力与 API Key 如下：
+
+| Provider | ASR | LLM | TTS | API Key 变量 |
+| --- | ---: | ---: | ---: | --- |
+| `openai` | 是 | 是 | 是 | `OPENAI_API_KEY` |
+| `deepseek` | 否 | 是 | 否 | `DEEPSEEK_API_KEY` |
+| `kimi` | 否 | 是 | 否 | `MOONSHOT_API_KEY` |
+| `claude` | 否 | 是 | 否 | `ANTHROPIC_API_KEY` |
+| `minimax` | 否 | 否 | 是 | `MINIMAX_API_KEY` |
+| `fish` | 是 | 否 | 是 | `FISH_AUDIO_API_KEY` |
+| `openai-compatible` | 否 | 是 | 否 | `LAFVIN_LLM_API_KEY` |
+
+如需连接其他兼容 OpenAI Chat Completions 协议的 LLM，选择
+`openai-compatible`，并设置 `LAFVIN_LLM_BASE_URL`、`LAFVIN_LLM_API_KEY`
+和 `LAFVIN_LLM_MODEL`。项目有意不开放自定义 ASR/TTS 端点，因为不同服务的
+音频协议和格式不能假定互相兼容。
+
+只把 ASR 替换为 Fish Audio：
+
+```ini
+LAFVIN_ASR_PROVIDER=fish
+FISH_AUDIO_API_KEY=替换为你的FISH_AUDIO_API_KEY
+LAFVIN_ASR_MODEL=transcribe-1
+# 可选；不设置时由 Fish Audio 自动检测语言。
+# LAFVIN_ASR_LANGUAGE=zh
+```
+
+Fish Audio Transcribe-1 目前是付费 Beta API。在撰写本文时，官方价格为
+0.36 美元/音频小时，按音频时长计费并向上取整到秒。它消耗的是 Fish
+Audio API Credit，与平台 Credit 分开管理；使用前请查看最新的
+[官方价格](https://docs.fish.audio/developer-guide/models-pricing/pricing-and-rate-limits)。
+不在命令行中显示 Key 即可查询 API 余额：
+
+```bash
+set -a
+source .env
+set +a
+curl -sS \
+  -H "Authorization: Bearer $FISH_AUDIO_API_KEY" \
+  "https://api.fish.audio/wallet/self/api-credit?check_free_credit=true"
+```
+
+返回 JSON 中的 `credit` 是当前 API Credit，也可能包含
+`has_free_credit`。余额不足时可在
+[Fish Audio 开发者计费页](https://fish.audio/app/developers/billing/)充值。
+
+只把 TTS 替换为 MiniMax：
+
+```ini
+LAFVIN_TTS_PROVIDER=minimax
+MINIMAX_API_KEY=替换为你的MINIMAX_API_KEY
+LAFVIN_TTS_MODEL=speech-2.8-turbo
+LAFVIN_TTS_VOICE=male-qn-qingse
+```
+
+只把 TTS 替换为 Fish Audio：
+
+```ini
+LAFVIN_TTS_PROVIDER=fish
+FISH_AUDIO_API_KEY=替换为你的FISH_AUDIO_API_KEY
+LAFVIN_TTS_MODEL=s2.1-pro
+# 可选：删除原来的 OpenAI 音色，或把它改成 Fish Audio reference ID。
+# 不填写 reference ID 时，由 Fish Audio 使用默认音色。
+# LAFVIN_TTS_VOICE=你的Fish音色ReferenceID
+```
+
+内置服务地址默认已经生效。`MINIMAX_TTS_BASE_URL`、`FISH_AUDIO_BASE_URL`
+等 Provider 专用地址仅供高级部署覆盖使用。这些服务属于第三方 API，可能需要
+单独充值，和面向消费者的订阅不是一回事。
+
 只进行离线测试：
 
 ```ini
-LAFVIN_AI_PROVIDER=fake
+LAFVIN_ASR_PROVIDER=fake
+LAFVIN_LLM_PROVIDER=fake
+LAFVIN_TTS_PROVIDER=fake
 ```
 
 本地 `.env` 已被 Git 忽略。不要在截图、日志、问题报告或提交中暴露 API Key。
+
+排查 LLM 回复和 TTS 棒读问题时，可以临时开启内容追踪：
+
+```ini
+LAFVIN_AI_LOG_CONTENT=1
+```
+
+开启后，日志会记录 LLM 原始回复和每个切片最终提交给 TTS 的清理后文本。TTS API
+返回的是音频而不是“实际朗读文字”，因此请求文本是定位问题的依据。该日志可能包含
+私人对话内容，默认关闭，完成排查后应删除或改回 `0`。
 
 ### 6. 运行交互式硬件测试
 
@@ -235,7 +318,8 @@ systemctl status lafvin-hat --no-pager
 systemctl status wm8960-soundcard --no-pager
 ```
 
-## 应用与日志命令
+<details>
+<summary><strong>应用与日志命令</strong></summary>
 
 ```bash
 lafvin-hat info
@@ -260,7 +344,10 @@ lafvin-hat app run apps/video_player
 `lafvin-hat` 是推荐命令。`lafvin`、`lafvin-sdk` 和相应的
 `python -m lafvin_hat...` 形式作为兼容入口保留。
 
-## 切换回开发模式
+</details>
+
+<details>
+<summary><strong>切换回开发模式</strong></summary>
 
 先停止部署 Runtime：
 
@@ -282,7 +369,10 @@ lafvin-hat runtime start --env-file .env --backend lafvin-hat
 sudo systemctl start lafvin-hat
 ```
 
-## 更新 Checkout
+</details>
+
+<details>
+<summary><strong>更新已部署的项目</strong></summary>
 
 普通 Runtime 和 bundled App 源代码更新：
 
@@ -316,6 +406,8 @@ sudo reboot
 cd ~/LAFVIN-Audio-Display-HAT
 sudo bash install_driver.sh --check
 ```
+
+</details>
 
 ## 部署所有权与恢复
 
@@ -381,7 +473,8 @@ sudo bash deploy/install_raspberry_pi.sh
 sudo systemctl start lafvin-hat
 ```
 
-## 桌面与模拟器开发
+<details>
+<summary><strong>桌面与模拟器开发</strong></summary>
 
 在 WSL2 或 Linux 上：
 
@@ -416,6 +509,8 @@ lafvin-hat runtime start --endpoint tcp://127.0.0.1:8765
 lafvin-hat sim button pressed
 lafvin-hat sim button released
 ```
+
+</details>
 
 ## 应用渲染方式
 
