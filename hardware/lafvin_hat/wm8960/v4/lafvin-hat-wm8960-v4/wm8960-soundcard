@@ -1,0 +1,137 @@
+#!/bin/bash
+
+set -Eeuo pipefail
+
+CARD="wm8960soundcard"
+PROFILE_DIR="/etc/wm8960-soundcard"
+PROFILE_STATE="$PROFILE_DIR/wm8960_asound.state"
+SYSTEM_STATE="/var/lib/alsa/asound.state"
+LOG_FILE="/var/log/$(basename "$0").log"
+
+CAPTURE_VOLUME="45,45"
+LEFT_INPUT_BOOST="2"
+RIGHT_INPUT_BOOST="2"
+ADC_CAPTURE_VOLUME="195,195"
+
+exec >>"$LOG_FILE" 2>&1
+
+echo "$(date --iso-8601=seconds) applying LAFVIN HAT WM8960 profile"
+
+read_control() {
+    local control="$1"
+    local output
+
+    if ! output="$(amixer -c "$CARD" cget "name=$control" 2>&1)"; then
+        echo "Cannot read $control: $output"
+        return 1
+    fi
+    sed -n 's/^[[:space:]]*: values=//p' <<<"$output" | head -n 1
+}
+
+verify_control() {
+    local control="$1"
+    local expected="$2"
+    local observed
+
+    observed="$(read_control "$control" || true)"
+    if [[ "$observed" == "$expected" ]]; then
+        echo "Verified $control=$observed"
+        return 0
+    fi
+    echo "Verification mismatch: $control expected $expected, observed ${observed:-unavailable}"
+    return 1
+}
+
+verify_calibration() {
+    local failed=0
+
+    verify_control "Capture Volume" "$CAPTURE_VOLUME" || failed=1
+    verify_control "Left Input Boost Mixer LINPUT1 Volume" "$LEFT_INPUT_BOOST" \
+        || failed=1
+    verify_control "Right Input Boost Mixer RINPUT1 Volume" "$RIGHT_INPUT_BOOST" \
+        || failed=1
+    verify_control "ADC PCM Capture Volume" "$ADC_CAPTURE_VOLUME" || failed=1
+    return "$failed"
+}
+
+set_control() {
+    local control="$1"
+    local value="$2"
+
+    if amixer -c "$CARD" cset "name=$control" "$value"; then
+        return 0
+    fi
+    echo "Failed to set $control=$value"
+    return 1
+}
+
+apply_calibration() {
+    local failed=0
+
+    set_control "Capture Volume" "$CAPTURE_VOLUME" || failed=1
+    set_control "Left Input Boost Mixer LINPUT1 Volume" "$LEFT_INPUT_BOOST" \
+        || failed=1
+    set_control "Right Input Boost Mixer RINPUT1 Volume" "$RIGHT_INPUT_BOOST" \
+        || failed=1
+    set_control "ADC PCM Capture Volume" "$ADC_CAPTURE_VOLUME" || failed=1
+    return "$failed"
+}
+
+modprobe i2c-dev
+
+# Pi Zero 2 W may expose the ALSA card before all mixer controls are writable.
+control_ready=false
+for attempt in $(seq 1 15); do
+    if read_control "Capture Volume" >/dev/null; then
+        control_ready=true
+        break
+    fi
+    echo "Waiting for $CARD mixer controls (attempt $attempt/15)"
+    sleep 2
+done
+
+if [[ "$control_ready" != true ]]; then
+    echo "ERROR: $CARD mixer controls did not become ready" >&2
+    exit 1
+fi
+
+rm -f /etc/asound.conf
+ln -s "$PROFILE_DIR/asound.conf" /etc/asound.conf
+
+# v1 linked ALSA's mutable system state directly to the fixed profile. Remove
+# only that legacy link so later `alsactl store` calls cannot rewrite profile
+# defaults. Unrelated regular state files remain untouched.
+if [[ -L "$SYSTEM_STATE" ]] \
+    && [[ "$(readlink -f "$SYSTEM_STATE")" == "$(readlink -f "$PROFILE_STATE")" ]]; then
+    rm -f "$SYSTEM_STATE"
+fi
+
+for attempt in $(seq 1 5); do
+    echo "Calibration attempt $attempt/5"
+
+    # A full restore may return non-zero for an unrelated or temporarily
+    # unavailable control. The verified mixer values, not this exit code, are
+    # the success contract for the service.
+    if ! alsactl -f "$PROFILE_STATE" restore "$CARD"; then
+        echo "WARNING: alsactl restore returned non-zero; checking readback"
+    fi
+
+    if ! verify_calibration; then
+        echo "Applying the four calibrated capture controls explicitly"
+        apply_calibration || true
+    fi
+
+    if verify_calibration; then
+        # Catch an immediate late reset during boot before declaring success.
+        sleep 2
+        if verify_calibration; then
+            echo "LAFVIN HAT WM8960 profile applied and verified"
+            exit 0
+        fi
+    fi
+
+    sleep 2
+done
+
+echo "ERROR: calibrated WM8960 profile could not be applied and verified" >&2
+exit 1

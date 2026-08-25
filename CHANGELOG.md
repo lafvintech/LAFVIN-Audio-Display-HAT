@@ -3,6 +3,35 @@
 All notable public-release changes are recorded here. App manifest versions
 remain independent from the Runtime package version.
 
+## 0.3.0b3 - 2026-08-25
+
+Third public beta with expanded Raspberry Pi compatibility and deployment
+refinements.
+
+### Added
+
+- Raspberry Pi 4 Model B support, verified on the 64-bit Raspberry Pi OS
+  260618 / 2026-06-18 Trixie image.
+- Raspberry Pi 3 Model B+ support, including platform detection, GPIO mapping,
+  hardware checks, installer coverage, and physical-device acceptance.
+- Optional first-deployment import of a checkout `.env` into the persistent
+  Runtime configuration.
+
+### Changed
+
+- WM8960 hardware installation and verification now use profile v4 across all
+  supported Raspberry Pi models.
+- Supported-board documentation and hardware test coverage now include Pi 3
+  Model B+ and Pi 4 Model B.
+- Voice Translator manifest version is now `0.1.1`.
+
+### Fixed
+
+- Korean message and scrolling-answer bodies now use the bundled Korean font
+  consistently for wrapping, rendering, and speech-following scroll layout.
+- Voice Translator treats questions, commands, and requested response
+  languages as source text to translate instead of instructions to execute.
+
 ## 0.3.0b2 - 2026-08-21
 
 Second public beta with expanded cloud AI services and refined bundled Apps.

@@ -8,8 +8,8 @@ from pathlib import Path
 
 DEVICE_TREE_MODEL = Path("/proc/device-tree/model")
 
-# BOARD pin numbers mapped to Raspberry Pi BCM GPIO offsets.  M3 deliberately
-# supports only the two accepted LAFVIN HAT targets below.
+# BOARD pin numbers mapped to Raspberry Pi BCM GPIO offsets. The supported
+# 40-pin Raspberry Pi targets use the same user-facing BCM offsets.
 RPI_BOARD_TO_BCM = {
     3: 2,
     5: 3,
@@ -67,7 +67,7 @@ class RaspberryPiPlatform:
             raise UnsupportedRaspberryPiError(
                 "Cannot read Raspberry Pi device model from "
                 f"{model_path}. Native LAFVIN HAT hardware supports only "
-                "Pi Zero 2 W and Pi 5."
+                "Pi Zero 2 W, Pi 3 Model B+, Pi 4 Model B, and Pi 5."
             ) from exc
         return cls.from_model(model)
 
@@ -76,13 +76,20 @@ class RaspberryPiPlatform:
         normalized = model.replace("\x00", "").strip()
         if "Raspberry Pi Zero 2" in normalized:
             return cls(model=normalized, gpiochip=0)
+        if "Raspberry Pi 3 Model B Plus" in normalized:
+            # BCM2837 exposes the 40-pin header through gpiochip0.
+            return cls(model=normalized, gpiochip=0)
+        if "Raspberry Pi 4 Model B" in normalized:
+            # BCM2711 exposes the 40-pin header through gpiochip0.
+            return cls(model=normalized, gpiochip=0)
         if "Raspberry Pi 5" in normalized:
             # Pi 5 header GPIO is exposed by RP1 as gpiochip4.
             return cls(model=normalized, gpiochip=4)
         raise UnsupportedRaspberryPiError(
             "Unsupported native LAFVIN HAT platform: "
             f"{normalized or 'unknown'}. Supported boards are Raspberry Pi "
-            "Zero 2 W and Raspberry Pi 5."
+            "Zero 2 W, Raspberry Pi 3 Model B+, Raspberry Pi 4 Model B, and "
+            "Raspberry Pi 5."
         )
 
     def line_offset(self, board_pin: int) -> int:

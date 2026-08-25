@@ -12,43 +12,43 @@ The optional Korean message-body font is the unmodified bundled file:
 
 - `assets/font/Noto_Sans_KR/NotoSansKR-VariableFont_wght.ttf`
 
-It is used only for a Chatbot or Translator assistant reply that contains
-Hangul. The retained [`OFL.txt`](../assets/font/Noto_Sans_KR/OFL.txt) applies
-to the bundled font. LAFVIN Audio Display HAT does not modify or redistribute
-it as a standalone font package.
+It is used only for a Chatbot or Translator message or scrolling answer body
+that contains Hangul. The retained
+[`OFL.txt`](../assets/font/Noto_Sans_KR/OFL.txt) applies to the bundled font.
+LAFVIN Audio Display HAT does not modify or redistribute it as a standalone
+font package.
 
-## LAFVIN Audio Display HAT WM8960 Profile v2 Resources
+## LAFVIN Audio Display HAT WM8960 Profile v4 Resources
 
 The following bundled resource is sourced from the Waveshare WM8960 Audio HAT
 project:
 
-- `hardware/lafvin_hat/wm8960/v2/lafvin-hat-wm8960-v2.zip`
+- `hardware/lafvin_hat/wm8960/v4/lafvin-hat-wm8960-v4.zip`
 
 Upstream project: <https://github.com/waveshareteam/WM8960-Audio-HAT>
 
 Upstream license: GPL-3.0
 
-LAFVIN profile: `lafvin-hat-wm8960` v2
+LAFVIN profile: `lafvin-hat-wm8960` v4
 
 The package is a LAFVIN-maintained derivative. The source attribution and
 GPL-3.0 license remain applicable. The unmodified GPL-3.0 text is retained as
-[`hardware/lafvin_hat/wm8960/v2/COPYING`](../hardware/lafvin_hat/wm8960/v2/COPYING).
+[`hardware/lafvin_hat/wm8960/v4/COPYING`](../hardware/lafvin_hat/wm8960/v4/COPYING).
 The fixed bundled snapshot has SHA-256:
 
 ```text
-8F2AAEA499200843ECC4DC506BEC615CAB5C1F527D1E72501D2157C28369C80E
+107AA596234EDE0B2FB077657BCED2043B083051B841093D9B86A469EF771D40
 ```
 
 LAFVIN's `deploy/hardware` scripts are separate local integration work. They
 verify the snapshot, record ownership state, install/check/remove profile
 resources conservatively, and account for the required reboot. See
-[`hardware/lafvin_hat/wm8960/v2/PROFILE.md`](../hardware/lafvin_hat/wm8960/v2/PROFILE.md)
+[`hardware/lafvin_hat/wm8960/v4/PROFILE.md`](../hardware/lafvin_hat/wm8960/v4/PROFILE.md)
 for the profile record.
 
-The archived v1 profile remains in
-`hardware/lafvin_hat/wm8960/v1/` as a historical source baseline and is not
-installed by the current scripts. It retains its own GPL-3.0
-[`COPYING`](../hardware/lafvin_hat/wm8960/v1/COPYING).
+The archived v1, v2, and v3 profiles remain under
+`hardware/lafvin_hat/wm8960/` as historical source baselines and are not
+installed by the current scripts. Each retains its own GPL-3.0 `COPYING`.
 
 ## HarmonyOS Sans SC UI Font
 

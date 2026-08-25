@@ -167,6 +167,58 @@ def test_gpio_controller_uses_v2_requests_on_pi_5() -> None:
     assert chip.closed is True
 
 
+def test_gpio_controller_uses_gpiochip0_for_pi_3_model_b_plus() -> None:
+    gpiod = _V2Gpiod()
+    controller = GpioController(
+        RaspberryPiPlatform.from_model(
+            "Raspberry Pi 3 Model B Plus Rev 1.3"
+        ),
+        gpiod_module=gpiod,
+    )
+
+    line = controller.request_output(15, initial_value=0, consumer="backlight")
+    line.set_value(1)
+
+    path, chip = gpiod.chips[0]
+    consumer, config, request = chip.requests[0]
+    offset, settings = next(iter(config.items()))
+    assert path == "/dev/gpiochip0"
+    assert consumer == "backlight"
+    assert offset == 22
+    assert settings.direction == "out"
+    assert settings.output_value == 0
+    assert request.set_calls == [(22, 1)]
+
+    controller.close()
+    assert request.released is True
+    assert chip.closed is True
+
+
+def test_gpio_controller_uses_gpiochip0_for_pi_4_v2_requests() -> None:
+    gpiod = _V2Gpiod()
+    controller = GpioController(
+        RaspberryPiPlatform.from_model("Raspberry Pi 4 Model B Rev 1.5"),
+        gpiod_module=gpiod,
+    )
+
+    line = controller.request_output(15, initial_value=0, consumer="backlight")
+    line.set_value(1)
+
+    path, chip = gpiod.chips[0]
+    consumer, config, request = chip.requests[0]
+    offset, settings = next(iter(config.items()))
+    assert path == "/dev/gpiochip0"
+    assert consumer == "backlight"
+    assert offset == 22
+    assert settings.direction == "out"
+    assert settings.output_value == 0
+    assert request.set_calls == [(22, 1)]
+
+    controller.close()
+    assert request.released is True
+    assert chip.closed is True
+
+
 def test_gpio_v2_input_retries_when_disabled_bias_is_unsupported() -> None:
     class RejectingSettings(_V2Settings):
         def __init__(self, **kwargs) -> None:

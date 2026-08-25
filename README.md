@@ -30,7 +30,7 @@ paths continue to use the `lafvin-hat` or `lafvin_hat` identifier.
 
 ## Release and License
 
-The current public prerelease is `0.3.0b2`.
+The current public prerelease is `0.3.0b3`.
 
 Except where a component-specific notice states otherwise, source code and
 project-created test media are licensed under the
@@ -44,9 +44,16 @@ project or a device image.
 The current hardware flow has been tested on:
 
 - Raspberry Pi Zero 2 W
+- Raspberry Pi 3 Model B+
+- Raspberry Pi 4 Model B
 - Raspberry Pi 5
-- Current 64-bit Raspberry Pi OS
+- Raspberry Pi OS (64-bit, image version 260618 / 2026-06-18, Trixie)
 - Python 3.11 or newer
+
+Raspberry Pi 3 Model B+ is functional but noticeably less responsive than
+Pi 4 Model B and Pi 5, especially during video playback and frequent UI
+redraws. This is an expected performance limit rather than an installation
+fault.
 
 Use a stable power supply. Shut down and disconnect power before installing or
 removing the HAT.
@@ -187,10 +194,8 @@ LAFVIN_ASR_MODEL=transcribe-1
 # LAFVIN_ASR_LANGUAGE=en
 ```
 
-Fish Audio Transcribe-1 is currently a beta, paid API. At the time of writing,
-the official price is USD 0.36 per audio hour, billed by audio duration rounded
-up to the nearest second. It consumes Fish Audio API credit, which is managed
-separately from platform credit. Check the current
+Fish Audio Transcribe-1 is currently a beta, paid API. It consumes Fish Audio
+API credit, which is managed separately from platform credit. Check the current
 [pricing](https://docs.fish.audio/developer-guide/models-pricing/pricing-and-rate-limits)
 before use. You can inspect the account's API credit without printing the key:
 
@@ -312,12 +317,44 @@ The deployment installer:
 - preserves existing configuration, data, third-party applications, and the
   hardware profile.
 
-Deployment deliberately does not copy the checkout `.env`. Configure the
-persistent Runtime separately:
+On the first deployment, if the checkout contains `.env` and no persistent
+Runtime environment exists yet, the installer asks whether to copy a snapshot
+to `/etc/lafvin-hat/runtime.env`. The prompt warns that the file may contain
+API keys or proxy credentials. Choosing `Yes` validates and copies the file
+with restricted permissions; it does not move or delete the development
+`.env`. Choosing `No`, running without an interactive terminal, or deploying
+without `.env` installs the default template instead.
+
+Repeated deployment preserves the existing persistent configuration without
+asking again.
+
+<details>
+<summary><strong>Replace or Edit Persistent Runtime Configuration</strong></summary>
+
+To deliberately replace the persistent configuration from the checkout later,
+use:
+
+```bash
+sudo bash deploy/install_raspberry_pi.sh --import-project-env
+```
+
+That explicit import validates `.env` and backs up the existing
+`runtime.env` under `/var/backups/lafvin-hat/` before replacing it. You can
+also edit the persistent Runtime configuration directly:
 
 ```bash
 sudo nano /etc/lafvin-hat/runtime.env
 ```
+
+</details>
+
+If cloud providers work in a development shell but stall after deployment,
+check whether that shell exports `HTTP_PROXY`, `HTTPS_PROXY`, or `ALL_PROXY`.
+The systemd service does not inherit interactive-shell proxy variables. Leave
+the proxy examples in `runtime.env` commented when direct access works; when a
+proxy is required, replace the example address, enable the applicable proxy
+lines, keep `NO_PROXY=127.0.0.1,localhost,::1`, and restart the service. The
+Runtime does not automatically switch network routes after a failed request.
 
 Then start and inspect the service:
 
@@ -469,6 +506,9 @@ sudo systemctl restart lafvin-hat
 Persistent Runtime configuration is stored in
 `/etc/lafvin-hat/runtime.env`, is preserved by repeated deployment and
 undeployment, and is restricted to root and the Runtime user's primary group.
+The installer never links it to or removes the checkout `.env`; use
+`--import-project-env` only when you intentionally want to replace the
+persistent copy from that development file.
 
 If WM8960 calibration verification fails after boot, collect the observed
 capture value and service logs before restarting anything:

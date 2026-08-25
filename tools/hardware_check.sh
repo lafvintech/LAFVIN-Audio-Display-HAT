@@ -46,10 +46,13 @@ model=""
 if [[ -r /proc/device-tree/model ]]; then
   model="$(tr -d '\0' < /proc/device-tree/model 2>/dev/null || true)"
 fi
-if [[ "${model}" == *"Raspberry Pi"* ]]; then
+if [[ "${model}" == *"Raspberry Pi Zero 2 W"* \
+  || "${model}" == *"Raspberry Pi 3 Model B Plus"* \
+  || "${model}" == *"Raspberry Pi 4 Model B"* \
+  || "${model}" == *"Raspberry Pi 5"* ]]; then
   pass "Supported board: ${model}"
 else
-  fail "This check currently supports Raspberry Pi only"
+  fail "Supported boards are Raspberry Pi Zero 2 W, Pi 3 Model B+, Pi 4 Model B, and Pi 5"
 fi
 
 boot_config="/boot/firmware/config.txt"
@@ -61,8 +64,12 @@ if [[ -f "${boot_config}" ]]; then
   check_config "dtparam=spi=on" "SPI boot configuration"
   check_config "dtparam=i2c_arm=on" "I2C boot configuration"
   check_config "dtparam=i2s=on" "I2S boot configuration"
-  check_config "dtoverlay=i2s-mmap" "I2S mmap overlay"
   check_config "dtoverlay=wm8960-soundcard" "WM8960 overlay"
+  if grep -qxF "dtoverlay=i2s-mmap" "${boot_config}" 2>/dev/null; then
+    warn "Obsolete unowned i2s-mmap entry remains in ${boot_config}"
+  else
+    pass "Obsolete i2s-mmap overlay is absent"
+  fi
 else
   fail "Raspberry Pi boot configuration was not found"
 fi

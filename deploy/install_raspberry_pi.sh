@@ -13,6 +13,7 @@ SERVICE_UNIT="/etc/systemd/system/${SERVICE_NAME}"
 DEPLOYMENT_DIR="/etc/lafvin-hat"
 DEPLOYMENT_METADATA="${DEPLOYMENT_DIR}/deployment.env"
 RUNTIME_ENV="${DEPLOYMENT_DIR}/runtime.env"
+PROJECT_ENV="${SOURCE_DIR}/.env"
 CLI_LINK="/usr/local/bin/lafvin-hat"
 LEGACY_CLI_LINK="/usr/local/bin/lafvin"
 DATA_DIR="/var/lib/lafvin-hat"
@@ -26,14 +27,24 @@ CLI_REPLACED=false
 CLI_HAD_EXISTING=false
 OLD_CLI_TARGET=""
 MANAGED_LEGACY_CLI_LINK=""
+IMPORT_PROJECT_ENV=false
+IMPORT_PROJECT_ENV_REQUESTED=false
+RUNTIME_ENV_REPLACED=false
+RUNTIME_ENV_HAD_EXISTING=false
+RUNTIME_ENV_BACKUP=""
 TEMP_FILES=()
 
 usage() {
   cat <<'EOF'
-Usage: sudo bash deploy/install_raspberry_pi.sh [--user USER]
+Usage: sudo bash deploy/install_raspberry_pi.sh [--user USER] [--import-project-env]
 
 Register the current Git checkout as the LAFVIN HAT systemd service.
 This script does not install or update the hardware driver.
+
+Options:
+  --user USER             Run the Runtime as USER.
+  --import-project-env    Copy checkout .env to the persistent runtime.env.
+                          An existing runtime.env is backed up first.
 EOF
 }
 
@@ -43,6 +54,10 @@ while [[ $# -gt 0 ]]; do
       [[ $# -ge 2 ]] || { echo "--user requires a value" >&2; exit 2; }
       TARGET_USER="$2"
       shift 2
+      ;;
+    --import-project-env)
+      IMPORT_PROJECT_ENV_REQUESTED=true
+      shift
       ;;
     -h|--help)
       usage
@@ -67,6 +82,16 @@ cleanup() {
 
 restore_service_on_error() {
   local exit_code=$?
+  if [[ "$RUNTIME_ENV_REPLACED" == true ]]; then
+    if [[ "$RUNTIME_ENV_HAD_EXISTING" == true \
+      && -n "$RUNTIME_ENV_BACKUP" \
+      && -f "$RUNTIME_ENV_BACKUP" ]]; then
+      install -m 0640 -o root -g "$TARGET_GROUP" \
+        "$RUNTIME_ENV_BACKUP" "$RUNTIME_ENV" || true
+    else
+      rm -f -- "$RUNTIME_ENV"
+    fi
+  fi
   if [[ "$SERVICE_REPLACED" == true ]]; then
     if [[ "$SERVICE_HAD_EXISTING" == true && -n "$SERVICE_BACKUP" ]]; then
       install -m 0644 "$SERVICE_BACKUP" "$SERVICE_UNIT" || true
@@ -123,6 +148,89 @@ run_as_target() {
   runuser -u "$TARGET_USER" -- env HOME="$TARGET_HOME" "$@"
 }
 
+validate_project_env() {
+  [[ -e "$PROJECT_ENV" || -L "$PROJECT_ENV" ]] || die \
+    "Project environment file does not exist: $PROJECT_ENV"
+  [[ ! -L "$PROJECT_ENV" && -f "$PROJECT_ENV" ]] || die \
+    "Refusing project environment that is not a regular file: $PROJECT_ENV"
+  local env_owner
+  env_owner="$(stat -c '%U' "$PROJECT_ENV")"
+  [[ "$env_owner" == "$TARGET_USER" ]] || die \
+    "Project environment owner is $env_owner, not target user $TARGET_USER"
+  run_as_target "${VENV_DIR}/bin/python" -c \
+    'from lafvin_hat.runtime.config import load_env_file; import sys; load_env_file(sys.argv[1])' \
+    "$PROJECT_ENV" || die "Invalid project environment file: $PROJECT_ENV"
+}
+
+choose_runtime_environment() {
+  if [[ "$IMPORT_PROJECT_ENV_REQUESTED" == true ]]; then
+    validate_project_env
+    IMPORT_PROJECT_ENV=true
+    return
+  fi
+  if [[ -e "$RUNTIME_ENV" || -L "$RUNTIME_ENV" ]]; then
+    [[ ! -L "$RUNTIME_ENV" && -f "$RUNTIME_ENV" ]] || die \
+      "Refusing runtime environment that is not a regular file: $RUNTIME_ENV"
+    return
+  fi
+  if [[ ! -e "$PROJECT_ENV" && ! -L "$PROJECT_ENV" ]]; then
+    return
+  fi
+  if [[ ! -t 0 ]]; then
+    echo "Found $PROJECT_ENV but no interactive terminal."
+    echo "Using the default runtime template; pass --import-project-env to import it."
+    return
+  fi
+
+  echo
+  echo "Found development environment: $PROJECT_ENV"
+  echo "It may contain API keys or proxy credentials."
+  read -r -p \
+    "Copy a snapshot to $RUNTIME_ENV for the deployed Runtime? [y/N] " answer
+  if [[ "${answer:-N}" =~ ^[Yy]$ ]]; then
+    validate_project_env
+    IMPORT_PROJECT_ENV=true
+  fi
+}
+
+install_runtime_environment() {
+  if [[ -e "$RUNTIME_ENV" || -L "$RUNTIME_ENV" ]]; then
+    [[ ! -L "$RUNTIME_ENV" && -f "$RUNTIME_ENV" ]] || die \
+      "Refusing runtime environment that is not a regular file: $RUNTIME_ENV"
+    RUNTIME_ENV_HAD_EXISTING=true
+  fi
+
+  if [[ "$IMPORT_PROJECT_ENV" == true ]]; then
+    if [[ "$RUNTIME_ENV_HAD_EXISTING" == true ]]; then
+      local backup_dir backup_timestamp
+      backup_dir="/var/backups/lafvin-hat"
+      backup_timestamp="$(date +%Y%m%d-%H%M%S)"
+      install -d -m 0700 -o root -g root "$backup_dir"
+      RUNTIME_ENV_BACKUP="$(
+        mktemp "${backup_dir}/runtime.env-${backup_timestamp}-XXXXXX"
+      )"
+      cp -a -- "$RUNTIME_ENV" "$RUNTIME_ENV_BACKUP"
+      echo "Backed up existing Runtime environment: $RUNTIME_ENV_BACKUP"
+    fi
+    install -m 0640 -o root -g "$TARGET_GROUP" "$PROJECT_ENV" "$RUNTIME_ENV"
+    RUNTIME_ENV_REPLACED=true
+    echo "Imported project environment into: $RUNTIME_ENV"
+    return
+  fi
+
+  if [[ "$RUNTIME_ENV_HAD_EXISTING" == true ]]; then
+    chown root:"$TARGET_GROUP" "$RUNTIME_ENV"
+    chmod 0640 "$RUNTIME_ENV"
+    echo "Preserved existing Runtime environment: $RUNTIME_ENV"
+    return
+  fi
+
+  install -m 0640 -o root -g "$TARGET_GROUP" \
+    "${SOURCE_DIR}/deploy/runtime.env.example" "$RUNTIME_ENV"
+  RUNTIME_ENV_REPLACED=true
+  echo "Installed default Runtime environment template: $RUNTIME_ENV"
+}
+
 VENV_DIR="${SOURCE_DIR}/.venv"
 if [[ ! -x "${VENV_DIR}/bin/python" ]]; then
   echo "Creating checkout virtual environment..."
@@ -138,6 +246,8 @@ run_as_target "${VENV_DIR}/bin/python" \
   -m lafvin_hat.runtime.apps.catalog \
   "${SOURCE_DIR}/apps/catalog.yaml" \
   --project-root "$SOURCE_DIR"
+
+choose_runtime_environment
 
 if [[ -e "$CLI_LINK" && ! -L "$CLI_LINK" ]]; then
   die "Refusing to replace non-symlink: $CLI_LINK"
@@ -168,13 +278,7 @@ install -d -m 0750 -o "$TARGET_USER" -g "$TARGET_GROUP" \
 chown -R "$TARGET_USER:$TARGET_GROUP" "$DATA_DIR/apps" "$LOG_DIR"
 
 install -d -m 0750 -o root -g "$TARGET_GROUP" "$DEPLOYMENT_DIR"
-if [[ ! -f "$RUNTIME_ENV" ]]; then
-  install -m 0640 -o root -g "$TARGET_GROUP" \
-    "${SOURCE_DIR}/deploy/runtime.env.example" "$RUNTIME_ENV"
-else
-  chown root:"$TARGET_GROUP" "$RUNTIME_ENV"
-  chmod 0640 "$RUNTIME_ENV"
-fi
+install_runtime_environment
 
 metadata_tmp="$(mktemp)"
 TEMP_FILES+=("$metadata_tmp")

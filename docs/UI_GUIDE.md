@@ -97,11 +97,12 @@ Runtime-owned Home and compatibility views, Toolkit Apps, and Video Player
 status/error pages use the same loader. Home App-list labels use `Medium` so
 they remain readable without making all body text heavier.
 
-Chatbot and Translator have one deliberately narrow exception: an assistant
-reply containing Hangul uses the bundled `Noto Sans KR` font for its entire
-message body. This avoids per-character font switching and leaves titles,
-controls, status text, role labels, and non-Korean replies on HarmonyOS Sans.
-It is not a general multi-script fallback system.
+Chatbot and Translator have one deliberately narrow exception: a message or
+scrolling answer body containing Hangul uses the bundled `Noto Sans KR` font
+for that entire body. Wrapping, speech-following scroll calculations, and
+rendering use the same selected font. This avoids per-character font switching
+and leaves titles, controls, status text, role labels, and non-Korean text on
+HarmonyOS Sans. It is not a general multi-script fallback system.
 
 Toolkit state labels retain lowercase values in App logic, but display with an
 uppercase initial, such as `Idle`, `Listening`, and `Answering...`.

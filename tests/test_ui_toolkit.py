@@ -171,7 +171,7 @@ def test_scrolling_text_target_stays_still_for_short_text_and_reaches_tail(
     assert len(rendered) == 240 * 280 * 2
 
 
-def test_assistant_hangul_reply_uses_one_korean_body_font() -> None:
+def test_hangul_messages_use_one_korean_body_font() -> None:
     canvas = Canvas(width=240, height=280)
     assistant = canvas._message_block(
         ChatMessage("assistant", "\uc548\ub155\ud558\uc138\uc694. Hello."),
@@ -185,9 +185,42 @@ def test_assistant_hangul_reply_uses_one_korean_body_font() -> None:
     )
 
     assert assistant["font"] is not canvas.body_font
-    assert user["font"] is canvas.body_font
+    assert user["font"] is assistant["font"]
     assert toolkit_module._contains_hangul("\uc548\ub155\ud558\uc138\uc694")
     assert not toolkit_module._contains_hangul("Hello, bonjour, hola")
+
+
+def test_hangul_scrolling_text_uses_korean_font_for_layout_and_rendering(
+    monkeypatch,
+) -> None:
+    canvas = Canvas(width=240, height=280)
+    text = "\uc548\ub155\ud558\uc138\uc694. \ud55c\uae00 \ub2f5\ubcc0\uc785\ub2c8\ub2e4."
+    expected_font = canvas._body_font_for_text(text)
+    observed_fonts = []
+    original_wrap = canvas.wrap
+
+    def capture_wrap(value, font, max_width):
+        observed_fonts.append(font)
+        return original_wrap(value, font, max_width)
+
+    monkeypatch.setattr(canvas, "wrap", capture_wrap)
+
+    canvas.scrolling_text_page(
+        "Chatbot",
+        text,
+        status="speaking",
+        actions=["Talk", "Back"],
+    )
+    canvas.text_scroll_target(
+        text,
+        len(text),
+        width=196,
+        height=152,
+    )
+
+    assert expected_font is not canvas.body_font
+    assert observed_fonts
+    assert all(font is expected_font for font in observed_fonts)
 
 
 def test_message_list_clips_overlong_latest_message_to_tail() -> None:

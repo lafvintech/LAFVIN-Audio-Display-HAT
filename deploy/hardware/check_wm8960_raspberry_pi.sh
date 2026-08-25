@@ -2,12 +2,12 @@
 set -Eeuo pipefail
 
 PROFILE_NAME="lafvin-hat-wm8960"
-PROFILE_VERSION="2"
+PROFILE_VERSION="4"
 PROFILE_LICENSE="GPL-3.0"
-PROFILE_ARCHIVE_SHA256="8f2aaea499200843ecc4dc506bec615cab5c1f527d1e72501d2157c28369c80e"
+PROFILE_ARCHIVE_SHA256="107aa596234ede0b2fb077657bced2043b083051b841093d9b86a469ef771d40"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-ARCHIVE="${PROJECT_ROOT}/hardware/lafvin_hat/wm8960/v2/lafvin-hat-wm8960-v2.zip"
+ARCHIVE="${PROJECT_ROOT}/hardware/lafvin_hat/wm8960/v4/lafvin-hat-wm8960-v4.zip"
 PROFILE_STATE="/var/lib/lafvin-hat-hardware/lafvin-hat-wm8960-profile.env"
 TARGET_ETC_DIR="/etc/wm8960-soundcard"
 TARGET_BIN="/usr/bin/wm8960-soundcard"
@@ -107,10 +107,14 @@ done
   echo "Raspberry Pi model information is unavailable." >&2
   exit 1
 }
-grep -q "Raspberry Pi" /proc/device-tree/model || {
-  echo "The WM8960 profile check supports Raspberry Pi only." >&2
+model="$(tr -d '\0' </proc/device-tree/model)"
+if [[ "$model" != *"Raspberry Pi Zero 2 W"* \
+  && "$model" != *"Raspberry Pi 3 Model B Plus"* \
+  && "$model" != *"Raspberry Pi 4 Model B"* \
+  && "$model" != *"Raspberry Pi 5"* ]]; then
+  echo "Supported boards are Raspberry Pi Zero 2 W, Pi 3 Model B+, Pi 4 Model B, and Pi 5." >&2
   exit 1
-}
+fi
 
 echo "LAFVIN HAT $PROFILE_NAME profile v$PROFILE_VERSION check"
 echo "========================================================"
@@ -144,6 +148,19 @@ if [[ -f "$PROFILE_STATE" ]]; then
       ownership_error+=" ${LAFVIN_WM8960_RESOURCE_SHA256:-missing}"
       fail "$ownership_error"
     fi
+    if [[ "${LAFVIN_WM8960_RPI_MODEL:-}" == "$model" ]]; then
+      pass "Recorded Raspberry Pi model: $model"
+    else
+      fail "Recorded Raspberry Pi model does not match: $model"
+    fi
+    case "${LAFVIN_WM8960_I2S_MMAP_MIGRATION:-missing}" in
+      absent|removed_lafvin_added|restored_lafvin_uncommented|preserved_unowned)
+        pass "Recorded i2s-mmap migration state: ${LAFVIN_WM8960_I2S_MMAP_MIGRATION}"
+        ;;
+      *)
+        fail "Recorded i2s-mmap migration state is missing or invalid"
+        ;;
+    esac
   else
     fail "WM8960 profile state is not root-owned"
   fi
@@ -154,10 +171,16 @@ fi
 if [[ ! -f "$BOOT_CONFIG" && -f /boot/config.txt ]]; then
   BOOT_CONFIG="/boot/config.txt"
 fi
+check_file "$(dirname "$BOOT_CONFIG")/overlays/wm8960-soundcard.dtbo" \
+  "Raspberry Pi WM8960 overlay file"
 check_exact_line "$BOOT_CONFIG" "dtparam=i2c_arm=on" "I2C profile setting"
 check_exact_line "$BOOT_CONFIG" "dtparam=i2s=on" "I2S profile setting"
-check_exact_line "$BOOT_CONFIG" "dtoverlay=i2s-mmap" "I2S mmap overlay"
 check_exact_line "$BOOT_CONFIG" "dtoverlay=wm8960-soundcard" "WM8960 overlay"
+if grep -qxF "dtoverlay=i2s-mmap" "$BOOT_CONFIG" 2>/dev/null; then
+  warn "Obsolete unowned i2s-mmap entry is still present: $BOOT_CONFIG"
+else
+  pass "Obsolete i2s-mmap overlay is absent"
+fi
 check_exact_line "$MODULES_FILE" "snd-soc-wm8960-soundcard" "WM8960 card module"
 
 check_file "$TARGET_ETC_DIR/asound.conf" "Profile ALSA configuration"

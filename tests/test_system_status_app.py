@@ -49,3 +49,18 @@ def test_system_status_app_formats_runtime_snapshot() -> None:
     assert "APP:6" in message
     assert "Temp:42.5C" in message
     assert "Storage:5.0/32G" in message
+
+
+def test_system_status_app_shortens_pi_4_model_name() -> None:
+    app = _load_module()
+
+    assert app._short_model("Raspberry Pi 4 Model B Rev 1.5") == "RPI 4 Model B"
+
+
+def test_system_status_app_shortens_pi_3_model_b_plus_name() -> None:
+    app = _load_module()
+
+    assert (
+        app._short_model("Raspberry Pi 3 Model B Plus Rev 1.3")
+        == "RPI 3 Model B Plus"
+    )

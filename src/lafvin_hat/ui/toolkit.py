@@ -325,7 +325,7 @@ class Canvas:
         scroll_to_bottom: bool = False,
         scroll_top: float = 0,
     ) -> "Canvas":
-        active_font = font or self.body_font
+        active_font = font or self._body_font_for_text(str(text))
         active_fill = fill or self.theme.text
         lines = self.wrap(text, active_font, width)
         max_lines = max(1, height // line_height)
@@ -369,8 +369,8 @@ class Canvas:
     ) -> float:
         if char_end <= 0 or height <= 0:
             return 0.0
-        active_font = font or self.body_font
         value = str(text)
+        active_font = font or self._body_font_for_text(value)
         lines = self.wrap(value, active_font, width)
         prefix = value[:min(len(value), char_end)]
         prefix_lines = self.wrap(prefix, active_font, width)
@@ -617,9 +617,14 @@ class Canvas:
             current_y += line_height
 
     def _body_font_for_message(self, message: ChatMessage) -> ImageFont.ImageFont:
-        """Use one font for an assistant reply instead of per-character fallback."""
+        """Use one font for a message body instead of per-character fallback."""
 
-        if message.role.lower() != "assistant" or not _contains_hangul(message.text):
+        return self._body_font_for_text(message.text)
+
+    def _body_font_for_text(self, text: str) -> ImageFont.ImageFont:
+        """Select the Korean body font when a complete text block needs it."""
+
+        if not _contains_hangul(text):
             return self.body_font
         if self._korean_body_font is None:
             self._korean_body_font = load_korean_ui_font(19) or self.body_font

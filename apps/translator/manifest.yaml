@@ -1,7 +1,7 @@
 schema_version: 1
 id: dev.lafvin.translator
 name: Voice Translator
-version: 0.1.0
+version: 0.1.1
 description: Voice translator sharing the M5 ASR, LLM, and TTS interfaces
 
 entrypoint:

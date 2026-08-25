@@ -1,0 +1,14 @@
+[Unit]
+Description=LAFVIN HAT WM8960 soundcard profile
+After=alsa-restore.service sound.target
+Wants=sound.target
+Before=lafvin-hat.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/wm8960-soundcard
+User=root
+
+[Install]
+WantedBy=multi-user.target

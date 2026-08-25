@@ -11,8 +11,8 @@ This checkout also includes third-party or separately licensed materials:
   assets/font/HarmonyOS Sans/LICENSE-update.txt.
 * Noto Sans KR message font. Its SIL Open Font License is retained at
   assets/font/Noto_Sans_KR/OFL.txt.
-* LAFVIN Audio Display HAT WM8960 profile v2 resources derived from the
+* LAFVIN Audio Display HAT WM8960 profile v3 resources derived from the
   Waveshare WM8960 Audio HAT project. Their GPL-3.0 license is retained at
-  hardware/lafvin_hat/wm8960/v2/COPYING.
+  hardware/lafvin_hat/wm8960/v3/COPYING.
 
 See docs/THIRD_PARTY_NOTICES.md for component provenance, scope, and checksums.

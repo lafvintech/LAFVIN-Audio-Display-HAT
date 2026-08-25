@@ -91,6 +91,13 @@ TARGET_BIN="${LAFVIN_WM8960_TARGET_BIN:-$TARGET_BIN}"
 SERVICE_PATH="${LAFVIN_WM8960_SERVICE_PATH:-$SERVICE_PATH}"
 WIREPLUMBER_CONFIG="${LAFVIN_WM8960_WIREPLUMBER_CONFIG:-}"
 WIREPLUMBER_CONFIG_SHA256="${LAFVIN_WM8960_WIREPLUMBER_CONFIG_SHA256:-}"
+ACTION_MODULE_I2C_DEV="${LAFVIN_ACTION_MODULE_I2C_DEV:-unknown}"
+ACTION_MODULE_CODEC="${LAFVIN_ACTION_MODULE_CODEC:-unknown}"
+ACTION_MODULE_CARD="${LAFVIN_ACTION_MODULE_CARD:-unknown}"
+ACTION_I2C_PARAM="${LAFVIN_ACTION_I2C_PARAM:-unknown}"
+ACTION_I2S_PARAM="${LAFVIN_ACTION_I2S_PARAM:-unknown}"
+ACTION_I2S_OVERLAY="${LAFVIN_ACTION_I2S_OVERLAY:-unknown}"
+ACTION_WM8960_OVERLAY="${LAFVIN_ACTION_WM8960_OVERLAY:-unknown}"
 
 echo "LAFVIN HAT $PROFILE_NAME removal plan ($STATE_KIND ownership state):"
 echo "  stop/remove service: wm8960-soundcard.service"
@@ -225,8 +232,12 @@ remove_wireplumber_config
 echo "Preserved shared I2C setting: dtparam=i2c_arm=on"
 restore_recorded_line "$BOOT_CONFIG" "dtparam=i2s=on" \
   "$ACTION_I2S_PARAM" "I2S setting"
-restore_recorded_line "$BOOT_CONFIG" "dtoverlay=i2s-mmap" \
-  "$ACTION_I2S_OVERLAY" "I2S overlay"
+if [[ "$ACTION_I2S_OVERLAY" == "not_required" ]]; then
+  echo "Obsolete i2s-mmap overlay was not required by this profile"
+else
+  restore_recorded_line "$BOOT_CONFIG" "dtoverlay=i2s-mmap" \
+    "$ACTION_I2S_OVERLAY" "I2S overlay"
+fi
 restore_recorded_line "$BOOT_CONFIG" "dtoverlay=wm8960-soundcard" \
   "$ACTION_WM8960_OVERLAY" "WM8960 overlay"
 echo "Preserved shared I2C module: i2c-dev"

@@ -12,7 +12,7 @@ simulator, deployment, and hardware-profile workflows.
 | Local development and first-party App structure | [Application Development Guide](APP_DEVELOPMENT.md) |
 | Toolkit components and visual rules | [UI Toolkit Guide](UI_GUIDE.md) |
 | Simulator use and its limits | [Simulator Guide](SIMULATOR.md) |
-| WM8960 profile provenance and support boundary | [Profile Record](../hardware/lafvin_hat/wm8960/v2/PROFILE.md) and [Third-Party Notices](THIRD_PARTY_NOTICES.md) |
+| WM8960 profile provenance and support boundary | [Profile Record](../hardware/lafvin_hat/wm8960/v3/PROFILE.md) and [Third-Party Notices](THIRD_PARTY_NOTICES.md) |
 | Public release changes | [Changelog](../CHANGELOG.md) |
 
 The repository root [README](../README.md) is the canonical Raspberry Pi

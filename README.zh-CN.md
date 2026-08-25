@@ -22,7 +22,7 @@ LAFVIN Audio Display HAT 是一套面向 Raspberry Pi 的便携式音频与显�
 
 ## 版本与许可证
 
-当前公开预发布版本为 `0.3.0b2`。
+当前公开预发布版本为 `0.3.0b3`。
 
 除非组件自己的许可证另有说明，项目源代码和项目创建的测试媒体使用
 [Apache License 2.0](LICENSE)。重新分发本项目或设备镜像前，请阅读
@@ -34,9 +34,14 @@ LAFVIN Audio Display HAT 是一套面向 Raspberry Pi 的便携式音频与显�
 当前硬件流程已经在以下环境测试：
 
 - Raspberry Pi Zero 2 W
+- Raspberry Pi 3 Model B+
+- Raspberry Pi 4 Model B
 - Raspberry Pi 5
-- 当前 64 位 Raspberry Pi OS
+- Raspberry Pi OS（64 位，镜像版本 260618 / 2026-06-18，Trixie）
 - Python 3.11 或更高版本
+
+Raspberry Pi 3 Model B+ 可以正常运行，但在视频播放和频繁界面刷新时会明显慢于
+Pi 4 Model B 与 Pi 5。这属于预期的性能限制，不代表安装失败。
 
 请使用稳定的电源。安装或拆卸 HAT 前，先关闭 Raspberry Pi 并断开电源。
 
@@ -162,9 +167,8 @@ LAFVIN_ASR_MODEL=transcribe-1
 # LAFVIN_ASR_LANGUAGE=zh
 ```
 
-Fish Audio Transcribe-1 目前是付费 Beta API。在撰写本文时，官方价格为
-0.36 美元/音频小时，按音频时长计费并向上取整到秒。它消耗的是 Fish
-Audio API Credit，与平台 Credit 分开管理；使用前请查看最新的
+Fish Audio Transcribe-1 目前是付费 Beta API，消耗 Fish Audio API Credit，
+与平台 Credit 分开管理；使用前请查看最新的
 [官方价格](https://docs.fish.audio/developer-guide/models-pricing/pricing-and-rate-limits)。
 不在命令行中显示 Key 即可查询 API 余额：
 
@@ -277,11 +281,38 @@ sudo bash deploy/install_raspberry_pi.sh
 - 将 Runtime 日志保存在 `/var/log/lafvin-hat`；
 - 保留已有配置、数据、第三方应用和硬件 Profile。
 
-部署过程不会复制 checkout 中的 `.env`。持久 Runtime 使用独立配置：
+首次部署时，如果 checkout 中存在 `.env`，而持久 Runtime 配置尚不存在，安装器会
+询问是否将其快照复制到 `/etc/lafvin-hat/runtime.env`。提示会明确该文件可能包含
+API Key 或代理凭据。选择 `Yes` 后，安装器会先验证格式，再以受限权限复制；不会
+移动或删除开发环境的 `.env`。选择 `No`、使用非交互终端或项目中没有 `.env` 时，
+安装器仍会安装默认模板。
+
+重复部署会直接保留已有持久配置，不会反复询问。
+
+<details>
+<summary><strong>替换或编辑持久 Runtime 配置</strong></summary>
+
+以后确实需要用开发配置替换时，显式执行：
+
+```bash
+sudo bash deploy/install_raspberry_pi.sh --import-project-env
+```
+
+显式导入会先验证 `.env`，并把原来的 `runtime.env` 备份到
+`/var/backups/lafvin-hat/` 后再替换。也可以直接编辑持久 Runtime 配置：
 
 ```bash
 sudo nano /etc/lafvin-hat/runtime.env
 ```
+
+</details>
+
+如果云端 Provider 在开发终端中正常、部署后却一直等待，请检查该终端是否导出了
+`HTTP_PROXY`、`HTTPS_PROXY` 或 `ALL_PROXY`。systemd 服务不会继承交互式终端的
+代理变量。直连正常时保持 `runtime.env` 中的代理示例为注释；必须使用代理时，替换
+示例地址并启用适用的代理行，同时保留
+`NO_PROXY=127.0.0.1,localhost,::1`，然后重启服务。Runtime 不会在请求失败后自动
+切换网络线路。
 
 然后启动并检查服务：
 
@@ -427,7 +458,9 @@ sudo systemctl restart lafvin-hat
 ```
 
 持久 Runtime 配置保存在 `/etc/lafvin-hat/runtime.env`。重复部署或解除部署
-都会保留该文件，并将访问权限限制为 root 和 Runtime 用户的主用户组。
+都会保留该文件，并将访问权限限制为 root 和 Runtime 用户的主用户组。安装器不会
+将它链接到 checkout 的 `.env`，也不会删除开发配置；只有确实需要从开发配置替换
+持久副本时才使用 `--import-project-env`。
 
 如果启动后的 WM8960 标定检查失败，请先记录实际捕获值和服务日志，不要先
 重启服务：

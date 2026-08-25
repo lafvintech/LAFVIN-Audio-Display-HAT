@@ -8,7 +8,7 @@ system packages and are not installed by the WM8960 driver scripts.
 | Asset | Runtime use | Keep |
 | --- | --- | --- |
 | `HarmonyOS Sans/HarmonyOS_Sans_SC.ttf` | Default UI font for Home, Runtime views, Toolkit Apps, and ordinary message bodies | Font file and `LICENSE-update.txt` |
-| `Noto_Sans_KR/NotoSansKR-VariableFont_wght.ttf` | Entire Chatbot or Translator assistant reply body when the reply contains Hangul | Font file and `OFL.txt` |
+| `Noto_Sans_KR/NotoSansKR-VariableFont_wght.ttf` | Entire Chatbot or Translator message/answer body when it contains Hangul | Font file and `OFL.txt` |
 
 HarmonyOS Sans SC supplies the normal `Regular`, `Medium`, and `Bold` weights
 through its variable-font interface. Noto Sans KR is a deliberately narrow
@@ -19,9 +19,9 @@ No other HarmonyOS family variants are shipped. Condensed, italic, Traditional
 Chinese, and Arabic files are excluded because the current loader never
 selects them; a future language addition must follow the process below.
 
-The Toolkit selects one font for a Korean assistant reply, then measures,
-wraps, and draws the whole reply with that same font. This avoids visible
-font switching in mixed Korean and Latin output.
+The Toolkit selects one font for a Korean message or scrolling answer, then
+measures, wraps, calculates scrolling, and draws the whole body with that same
+font. This avoids visible font switching in mixed Korean and Latin output.
 
 ## Distribution Rules
 

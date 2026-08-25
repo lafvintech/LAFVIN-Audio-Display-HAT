@@ -48,47 +48,47 @@ def test_deployment_shell_script_syntax(relative_path: str) -> None:
 
 
 def test_bundled_wm8960_resources_are_complete() -> None:
-    archive = ROOT / "hardware/lafvin_hat/wm8960/v2/lafvin-hat-wm8960-v2.zip"
-    profile_source = ROOT / "hardware/lafvin_hat/wm8960/v2/lafvin-hat-wm8960-v2"
+    archive = ROOT / "hardware/lafvin_hat/wm8960/v4/lafvin-hat-wm8960-v4.zip"
+    profile_source = ROOT / "hardware/lafvin_hat/wm8960/v4/lafvin-hat-wm8960-v4"
     installer = ROOT / "deploy/hardware/install_wm8960_raspberry_pi.sh"
     checker = ROOT / "deploy/hardware/check_wm8960_raspberry_pi.sh"
-    profile = ROOT / "hardware/lafvin_hat/wm8960/v2/PROFILE.md"
-    license_file = ROOT / "hardware/lafvin_hat/wm8960/v2/COPYING"
+    profile = ROOT / "hardware/lafvin_hat/wm8960/v4/PROFILE.md"
+    license_file = ROOT / "hardware/lafvin_hat/wm8960/v4/COPYING"
 
     assert archive.is_file()
     assert profile_source.is_dir()
     assert sha256(archive.read_bytes()).hexdigest() == (
-        "8f2aaea499200843ecc4dc506bec615cab5c1f527d1e72501d2157c28369c80e"
+        "107aa596234ede0b2fb077657bced2043b083051b841093d9b86a469ef771d40"
     )
     with ZipFile(archive) as bundle:
         entries = bundle.infolist()
         names = {entry.filename for entry in entries}
         mixer_state = bundle.read(
-            "lafvin-hat-wm8960-v2/wm8960_asound.state"
+            "lafvin-hat-wm8960-v4/wm8960_asound.state"
         ).decode("utf-8")
         wireplumber_rule = bundle.read(
-            "lafvin-hat-wm8960-v2/51-lafvin-hat-wm8960.conf"
+            "lafvin-hat-wm8960-v4/51-lafvin-hat-wm8960.conf"
         ).decode("utf-8")
     assert all("\\" not in entry.orig_filename for entry in entries)
     source_files = sorted(path for path in profile_source.iterdir() if path.is_file())
     assert source_files
     assert {entry.filename for entry in entries if not entry.is_dir()} == {
-        f"lafvin-hat-wm8960-v2/{source_file.name}"
+        f"lafvin-hat-wm8960-v4/{source_file.name}"
         for source_file in source_files
     }
     for source_file in source_files:
-        archive_name = f"lafvin-hat-wm8960-v2/{source_file.name}"
+        archive_name = f"lafvin-hat-wm8960-v4/{source_file.name}"
         assert archive_name in names
         with ZipFile(archive) as bundle:
             assert bundle.read(archive_name) == _canonical_profile_bytes(
                 source_file
             )
-    assert "lafvin-hat-wm8960-v2/wm8960-soundcard" in names
-    assert "lafvin-hat-wm8960-v2/wm8960-soundcard.service" in names
-    assert "lafvin-hat-wm8960-v2/wm8960_asound.state" in names
-    assert "lafvin-hat-wm8960-v2/asound.conf" in names
-    assert "lafvin-hat-wm8960-v2/51-lafvin-hat-wm8960.conf" in names
-    assert "lafvin-hat-wm8960-v2/dkms.conf" not in names
+    assert "lafvin-hat-wm8960-v4/wm8960-soundcard" in names
+    assert "lafvin-hat-wm8960-v4/wm8960-soundcard.service" in names
+    assert "lafvin-hat-wm8960-v4/wm8960_asound.state" in names
+    assert "lafvin-hat-wm8960-v4/asound.conf" in names
+    assert "lafvin-hat-wm8960-v4/51-lafvin-hat-wm8960.conf" in names
+    assert "lafvin-hat-wm8960-v4/dkms.conf" not in names
     assert not (profile_source / "dkms.conf").exists()
     assert "value.0 45" in mixer_state
     assert "value.1 45" in mixer_state
@@ -99,8 +99,9 @@ def test_bundled_wm8960_resources_are_complete() -> None:
     assert "api.alsa.soft-mixer = true" in wireplumber_rule
 
     script = installer.read_text(encoding="utf-8")
-    assert "hardware/lafvin_hat/wm8960/v2/lafvin-hat-wm8960-v2.zip" in script
+    assert "hardware/lafvin_hat/wm8960/v4/lafvin-hat-wm8960-v4.zip" in script
     assert 'PROFILE_NAME="lafvin-hat-wm8960"' in script
+    assert 'PROFILE_VERSION="4"' in script
     assert "PROFILE_ARCHIVE_SHA256" in script
     assert "write_profile_state" in script
     assert "--yes|-y" in script
@@ -110,6 +111,15 @@ def test_bundled_wm8960_resources_are_complete() -> None:
     assert 'WIREPLUMBER_CONFIG_DIR="/etc/wireplumber/wireplumber.conf.d"' in script
     assert "LAFVIN_WM8960_WIREPLUMBER_CONFIG_SHA256" in script
     assert "Refusing to replace unmanaged WirePlumber config" in script
+    assert "migrate_obsolete_i2s_mmap" in script
+    assert "carry_forward_action" in script
+    assert "load_previous_ownership_state" in script
+    assert "Loaded first-install WM8960 ownership state" in script
+    assert "Preserving original uninstall backup" in script
+    assert 'ensure_line_in_file "$BOOT_CONFIG" "dtoverlay=i2s-mmap"' not in script
+    assert "Required Raspberry Pi overlay is missing" in script
+    assert "Raspberry Pi 3 Model B Plus" in script
+    assert "Raspberry Pi 4 Model B" in script
     assert "dkms" not in script.lower()
     assert "python3-pygame" not in script
     assert "python demos" not in script
@@ -149,6 +159,19 @@ def test_bundled_wm8960_resources_are_complete() -> None:
     assert "Recorded WirePlumber rule ownership" in checker.read_text(
         encoding="utf-8"
     )
+    assert "Obsolete i2s-mmap overlay is absent" in checker.read_text(
+        encoding="utf-8"
+    )
+    checker_text = checker.read_text(encoding="utf-8")
+    assert "Raspberry Pi 3 Model B Plus" in checker_text
+    assert 'PROFILE_VERSION="4"' in checker_text
+
+    historical_v3 = ROOT / "hardware/lafvin_hat/wm8960/v3"
+    assert (historical_v3 / "PROFILE.md").is_file()
+    assert (historical_v3 / "lafvin-hat-wm8960-v3.zip").is_file()
+    historical_v2 = ROOT / "hardware/lafvin_hat/wm8960/v2"
+    assert (historical_v2 / "PROFILE.md").is_file()
+    assert (historical_v2 / "lafvin-hat-wm8960-v2.zip").is_file()
 
 
 def test_checkout_installer_and_hardware_entry_points_are_separate() -> None:
@@ -163,11 +186,24 @@ def test_checkout_installer_and_hardware_entry_points_are_separate() -> None:
     assert '"${SOURCE_DIR}/install_driver.sh"' not in script
     assert "SUDO_USER" in script
     assert "--user USER" in script
+    assert "--import-project-env" in script
     assert 'stat -c \'%U\' "$SOURCE_DIR"' in script
     assert 'runuser -u "$TARGET_USER"' in script
     assert '-e "${SOURCE_DIR}[hardware,ai]"' in script
     assert 'DEPLOYMENT_DIR="/etc/lafvin-hat"' in script
     assert 'DEPLOYMENT_METADATA="${DEPLOYMENT_DIR}/deployment.env"' in script
+    assert 'PROJECT_ENV="${SOURCE_DIR}/.env"' in script
+    assert "validate_project_env" in script
+    assert "Project environment owner is" in script
+    assert "load_env_file(sys.argv[1])" in script
+    assert "Found development environment" in script
+    assert "It may contain API keys or proxy credentials" in script
+    assert "no interactive terminal" in script
+    assert "Backed up existing Runtime environment" in script
+    assert "Preserved existing Runtime environment" in script
+    assert "RUNTIME_ENV_REPLACED" in script
+    assert "RUNTIME_ENV_BACKUP" in script
+    assert 'install -m 0640 -o root -g "$TARGET_GROUP"' in script
     assert "deploy/render_systemd_service.py" in script
     assert "tar -C" not in script
     assert 'INSTALL_DIR="/opt/lafvin-hat"' not in script
@@ -225,6 +261,15 @@ def test_runtime_and_driver_uninstallers_preserve_separate_boundaries() -> None:
     assert "rm -rf -- \"$TARGET_ETC_DIR\"" in driver
     assert "remove_wireplumber_config" in driver
     assert "Preserved modified WirePlumber rule" in driver
+    assert (
+        'ACTION_MODULE_CODEC="${LAFVIN_ACTION_MODULE_CODEC:-unknown}"'
+        in driver
+    )
+    assert (
+        'ACTION_I2S_OVERLAY="${LAFVIN_ACTION_I2S_OVERLAY:-unknown}"'
+        in driver
+    )
+    assert 'if [[ "$ACTION_I2S_OVERLAY" == "not_required" ]]' in driver
     assert "apt-get remove" not in driver
 
 
@@ -237,6 +282,10 @@ def test_hardware_acceptance_tools_are_present() -> None:
     assert "/dev/spidev0.0" in check
     assert "wm8960" in check
     assert "HarmonyOS_Sans_SC.ttf" in check
+    assert "Raspberry Pi Zero 2 W" in check
+    assert "Raspberry Pi 3 Model B Plus" in check
+    assert "Raspberry Pi 4 Model B" in check
+    assert "Raspberry Pi 5" in check
     assert "_test_display" in interactive
     assert "_test_led" in interactive
     assert "_test_button" in interactive
@@ -283,6 +332,11 @@ def test_systemd_uses_runtime_env_file_parser() -> None:
     assert "# Fish Audio ASR uses paid API credit" in template
     assert "# LAFVIN_ASR_MODEL=transcribe-1" in template
     assert "# LAFVIN_ASR_LANGUAGE=zh" in template
+    assert "# HTTP_PROXY=http://192.168.1.10:7890" in template
+    assert "# HTTPS_PROXY=http://192.168.1.10:7890" in template
+    assert "# ALL_PROXY=http://192.168.1.10:7890" in template
+    assert "# NO_PROXY=127.0.0.1,localhost,::1" in template
+    assert "does not inherit proxy variables exported in your shell" in template
     assert "KIMI_API_KEY" not in template
     assert "CLAUDE_API_KEY" not in template
 
