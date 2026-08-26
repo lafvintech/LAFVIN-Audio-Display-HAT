@@ -48,9 +48,9 @@ def test_load_env_file_preserves_existing_environment(
         "\n".join(
             [
                 "# local AI settings",
-                "export LAFVIN_AI_PROVIDER=openai-compatible",
+                "export LAFVIN_LLM_PROVIDER=openai-compatible",
                 'OPENAI_API_KEY="file-secret"',
-                "LAFVIN_LLM_MODEL=gpt-test # comment",
+                "OPENAI_LLM_MODEL=gpt-test # comment",
             ]
         ),
         encoding="utf-8",
@@ -61,8 +61,8 @@ def test_load_env_file_preserves_existing_environment(
 
     assert loaded["OPENAI_API_KEY"] == "file-secret"
     assert os.environ["OPENAI_API_KEY"] == "shell-secret"
-    assert os.environ["LAFVIN_AI_PROVIDER"] == "openai-compatible"
-    assert os.environ["LAFVIN_LLM_MODEL"] == "gpt-test"
+    assert os.environ["LAFVIN_LLM_PROVIDER"] == "openai-compatible"
+    assert os.environ["OPENAI_LLM_MODEL"] == "gpt-test"
 
 
 def test_load_env_file_rejects_invalid_lines(tmp_path: Path) -> None:

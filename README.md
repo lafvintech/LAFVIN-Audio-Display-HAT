@@ -149,10 +149,10 @@ LAFVIN_ASR_PROVIDER=openai
 LAFVIN_LLM_PROVIDER=openai
 LAFVIN_TTS_PROVIDER=openai
 OPENAI_API_KEY=replace-with-your-key
-LAFVIN_ASR_MODEL=whisper-1
-LAFVIN_LLM_MODEL=gpt-4o-mini
-LAFVIN_TTS_MODEL=tts-1
-LAFVIN_TTS_VOICE=alloy
+OPENAI_ASR_MODEL=whisper-1
+OPENAI_LLM_MODEL=gpt-4o-mini
+OPENAI_TTS_MODEL=tts-1
+OPENAI_TTS_VOICE=alloy
 ```
 
 The three capabilities are selected independently:
@@ -165,7 +165,20 @@ The three capabilities are selected independently:
 | `claude` | No | Yes | No | `ANTHROPIC_API_KEY` |
 | `minimax` | No | No | Yes | `MINIMAX_API_KEY` |
 | `fish` | Yes | No | Yes | `FISH_AUDIO_API_KEY` |
-| `openai-compatible` | No | Yes | No | `LAFVIN_LLM_API_KEY` |
+| `openai-compatible` | No | Yes | No | `LAFVIN_OPENAI_COMPATIBLE_LLM_API_KEY` |
+
+Provider settings use separate names and may remain in `.env` at the same
+time. Changing a Provider selection does not require commenting out another
+Provider's model, voice, language, or latency settings. Only the three selected
+Provider sections are read and validated.
+
+> [!IMPORTANT]
+> Version `0.3.0b3` removes the old shared `LAFVIN_AI_PROVIDER`,
+> `LAFVIN_ASR_MODEL`, `LAFVIN_ASR_LANGUAGE`, `LAFVIN_LLM_BASE_URL`,
+> `LAFVIN_LLM_API_KEY`, `LAFVIN_LLM_MODEL`, `LAFVIN_LLM_MAX_TOKENS`,
+> `LAFVIN_TTS_MODEL`, and `LAFVIN_TTS_VOICE` settings. Start from the current
+> `.env.example` or rename these values to the Provider-specific settings shown
+> below.
 
 For example, use OpenAI ASR/TTS with DeepSeek LLM:
 
@@ -175,23 +188,26 @@ LAFVIN_LLM_PROVIDER=deepseek
 LAFVIN_TTS_PROVIDER=openai
 OPENAI_API_KEY=replace-with-your-openai-key
 DEEPSEEK_API_KEY=replace-with-your-deepseek-key
-LAFVIN_LLM_MODEL=deepseek-v4-flash
+DEEPSEEK_LLM_MODEL=deepseek-v4-flash
 ```
 
-Use `MOONSHOT_API_KEY` for `kimi`, or `ANTHROPIC_API_KEY` for `claude`. To use
-another OpenAI-compatible LLM, select `openai-compatible` and set
-`LAFVIN_LLM_BASE_URL`, `LAFVIN_LLM_API_KEY`, and `LAFVIN_LLM_MODEL`. Custom ASR
-and TTS endpoints are intentionally unsupported because their audio protocols
-and formats are not interchangeable.
+Use `MOONSHOT_API_KEY` with `MOONSHOT_LLM_MODEL` for `kimi`, or
+`ANTHROPIC_API_KEY` with `ANTHROPIC_LLM_MODEL` for `claude`. To use another
+OpenAI-compatible LLM, select `openai-compatible` and set
+`LAFVIN_OPENAI_COMPATIBLE_LLM_BASE_URL`,
+`LAFVIN_OPENAI_COMPATIBLE_LLM_API_KEY`, and
+`LAFVIN_OPENAI_COMPATIBLE_LLM_MODEL`. Custom ASR and TTS endpoints are
+intentionally unsupported because their audio protocols and formats are not
+interchangeable.
 
 To replace only ASR with Fish Audio:
 
 ```ini
 LAFVIN_ASR_PROVIDER=fish
 FISH_AUDIO_API_KEY=replace-with-your-fish-audio-key
-LAFVIN_ASR_MODEL=transcribe-1
+FISH_AUDIO_ASR_MODEL=transcribe-1
 # Optional; omit this setting for automatic language detection.
-# LAFVIN_ASR_LANGUAGE=en
+# FISH_AUDIO_ASR_LANGUAGE=en
 ```
 
 Fish Audio Transcribe-1 is currently a beta, paid API. It consumes Fish Audio
@@ -217,8 +233,8 @@ To replace only TTS with MiniMax:
 ```ini
 LAFVIN_TTS_PROVIDER=minimax
 MINIMAX_API_KEY=replace-with-your-minimax-key
-LAFVIN_TTS_MODEL=speech-2.8-turbo
-LAFVIN_TTS_VOICE=male-qn-qingse
+MINIMAX_TTS_MODEL=speech-2.8-turbo
+MINIMAX_TTS_VOICE=male-qn-qingse
 ```
 
 To replace only TTS with Fish Audio:
@@ -226,10 +242,10 @@ To replace only TTS with Fish Audio:
 ```ini
 LAFVIN_TTS_PROVIDER=fish
 FISH_AUDIO_API_KEY=replace-with-your-fish-audio-key
-LAFVIN_TTS_MODEL=s2.1-pro
-# Optional: remove the existing OpenAI voice or replace it with a Fish
-# reference ID. With no reference ID, Fish Audio selects its default voice.
-# LAFVIN_TTS_VOICE=your-fish-reference-id
+FISH_AUDIO_TTS_MODEL=s2.1-pro
+# Optional Fish reference ID. Leave blank to use the service default voice.
+FISH_AUDIO_TTS_VOICE=your-fish-reference-id
+FISH_AUDIO_TTS_LATENCY=balanced
 ```
 
 The built-in service URLs are already used by default. Provider-specific URL

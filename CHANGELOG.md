@@ -23,10 +23,25 @@ refinements.
   supported Raspberry Pi models.
 - Supported-board documentation and hardware test coverage now include Pi 3
   Model B+ and Pi 4 Model B.
+- ASR, LLM, and TTS models, voices, languages, and latency modes now use
+  Provider-specific environment variables, allowing every Provider's settings
+  to coexist without overriding the selected service.
 - Voice Translator manifest version is now `0.1.1`.
+
+### Removed
+
+- The shared `LAFVIN_AI_PROVIDER` and Provider-owned `LAFVIN_ASR_*`,
+  `LAFVIN_LLM_*`, and `LAFVIN_TTS_*` configuration paths for models, voices,
+  language, custom endpoint credentials, and Claude token limits. Version
+  `0.3.0b3` requires the three capability selectors and Provider-specific
+  settings documented in `.env.example`; capability timeout and retry settings
+  retain their existing names.
 
 ### Fixed
 
+- PCM WAV normalization now reads physical audio in bounded chunks instead of
+  trusting oversized streaming-container lengths, preventing Fish Audio TTS
+  responses from triggering excessive memory allocation.
 - Korean message and scrolling-answer bodies now use the bundled Korean font
   consistently for wrapping, rendering, and speech-following scroll layout.
 - Voice Translator treats questions, commands, and requested response

@@ -67,7 +67,7 @@ _PROVIDER_API_KEY_ENV = {
     "kimi": "MOONSHOT_API_KEY",
     "minimax": "MINIMAX_API_KEY",
     "openai": "OPENAI_API_KEY",
-    "openai-compatible": "LAFVIN_LLM_API_KEY",
+    "openai-compatible": "LAFVIN_OPENAI_COMPATIBLE_LLM_API_KEY",
 }
 
 
@@ -77,13 +77,12 @@ def providers_from_environment(
     fake_response: str = "This is a deterministic response.",
     require_explicit: bool = False,
 ) -> AIProviderSet:
-    common_provider = os.getenv("LAFVIN_AI_PROVIDER")
     capability_variables = {
         "ASR": "LAFVIN_ASR_PROVIDER",
         "LLM": "LAFVIN_LLM_PROVIDER",
         "TTS": "LAFVIN_TTS_PROVIDER",
     }
-    if require_explicit and not common_provider:
+    if require_explicit:
         missing = [
             name
             for name in capability_variables.values()
@@ -95,10 +94,9 @@ def providers_from_environment(
                 "LAFVIN_ASR_PROVIDER, LAFVIN_LLM_PROVIDER, and "
                 f"LAFVIN_TTS_PROVIDER. Missing: {', '.join(missing)}."
             )
-    fallback_provider = common_provider or "fake"
-    asr_provider = os.getenv("LAFVIN_ASR_PROVIDER") or fallback_provider
-    llm_provider = os.getenv("LAFVIN_LLM_PROVIDER") or fallback_provider
-    tts_provider = os.getenv("LAFVIN_TTS_PROVIDER") or fallback_provider
+    asr_provider = os.getenv("LAFVIN_ASR_PROVIDER") or "fake"
+    llm_provider = os.getenv("LAFVIN_LLM_PROVIDER") or "fake"
+    tts_provider = os.getenv("LAFVIN_TTS_PROVIDER") or "fake"
     if require_explicit:
         _validate_provider_credentials(
             {
@@ -163,7 +161,7 @@ def _create_openai_asr(_fake_transcript: str) -> ASRProvider:
             "https://api.openai.com/v1",
         ),
         api_key=os.getenv("OPENAI_API_KEY"),
-        model=os.getenv("LAFVIN_ASR_MODEL", "whisper-1"),
+        model=os.getenv("OPENAI_ASR_MODEL", "whisper-1"),
         timeout=_timeout("ASR"),
         retries=_retries("ASR"),
         provider_name="openai",
@@ -177,8 +175,8 @@ def _create_fish_asr(_fake_transcript: str) -> ASRProvider:
             "https://api.fish.audio/v1",
         ),
         api_key=os.getenv("FISH_AUDIO_API_KEY"),
-        model=os.getenv("LAFVIN_ASR_MODEL", "transcribe-1"),
-        language=os.getenv("LAFVIN_ASR_LANGUAGE"),
+        model=os.getenv("FISH_AUDIO_ASR_MODEL", "transcribe-1"),
+        language=os.getenv("FISH_AUDIO_ASR_LANGUAGE"),
         timeout=_timeout("ASR"),
         retries=_retries("ASR"),
     )
@@ -197,8 +195,12 @@ def _create_fake_llm(fake_response: str) -> LLMProvider:
 def _create_openai_compatible_llm(_fake_response: str) -> LLMProvider:
     return OpenAICompatibleLLM(
         base_url=_custom_llm_base_url(),
-        api_key=os.getenv("LAFVIN_LLM_API_KEY"),
-        model=_required_model("LLM", "openai-compatible"),
+        api_key=os.getenv("LAFVIN_OPENAI_COMPATIBLE_LLM_API_KEY"),
+        model=_required_model(
+            "LAFVIN_OPENAI_COMPATIBLE_LLM_MODEL",
+            "LLM",
+            "openai-compatible",
+        ),
         timeout=_timeout("LLM"),
         retries=_retries("LLM"),
         provider_name="openai-compatible",
@@ -212,7 +214,7 @@ def _create_openai_llm(_fake_response: str) -> LLMProvider:
             "https://api.openai.com/v1",
         ),
         api_key=os.getenv("OPENAI_API_KEY"),
-        model=os.getenv("LAFVIN_LLM_MODEL", "gpt-4o-mini"),
+        model=os.getenv("OPENAI_LLM_MODEL", "gpt-4o-mini"),
         timeout=_timeout("LLM"),
         retries=_retries("LLM"),
         provider_name="openai",
@@ -226,7 +228,7 @@ def _create_deepseek_llm(_fake_response: str) -> LLMProvider:
             "https://api.deepseek.com",
         ),
         api_key=os.getenv("DEEPSEEK_API_KEY"),
-        model=_required_model("LLM", "deepseek"),
+        model=_required_model("DEEPSEEK_LLM_MODEL", "LLM", "deepseek"),
         timeout=_timeout("LLM"),
         retries=_retries("LLM"),
         provider_name="deepseek",
@@ -240,7 +242,7 @@ def _create_kimi_llm(_fake_response: str) -> LLMProvider:
             "https://api.moonshot.cn/v1",
         ),
         api_key=os.getenv("MOONSHOT_API_KEY"),
-        model=_required_model("LLM", "kimi"),
+        model=_required_model("MOONSHOT_LLM_MODEL", "LLM", "kimi"),
         timeout=_timeout("LLM"),
         retries=_retries("LLM"),
         provider_name="kimi",
@@ -254,8 +256,8 @@ def _create_claude_llm(_fake_response: str) -> LLMProvider:
             "https://api.anthropic.com/v1",
         ),
         api_key=os.getenv("ANTHROPIC_API_KEY"),
-        model=_required_model("LLM", "claude"),
-        max_tokens=_positive_int("LAFVIN_LLM_MAX_TOKENS", 1024),
+        model=_required_model("ANTHROPIC_LLM_MODEL", "LLM", "claude"),
+        max_tokens=_positive_int("ANTHROPIC_LLM_MAX_TOKENS", 1024),
         timeout=_timeout("LLM"),
         version=os.getenv("ANTHROPIC_VERSION", "2023-06-01"),
     )
@@ -272,8 +274,8 @@ def _create_openai_tts() -> TTSProvider:
             "https://api.openai.com/v1",
         ),
         api_key=os.getenv("OPENAI_API_KEY"),
-        model=os.getenv("LAFVIN_TTS_MODEL", "tts-1"),
-        voice=os.getenv("LAFVIN_TTS_VOICE", "alloy"),
+        model=os.getenv("OPENAI_TTS_MODEL", "tts-1"),
+        voice=os.getenv("OPENAI_TTS_VOICE", "alloy"),
         timeout=_timeout("TTS"),
         retries=_retries("TTS"),
         provider_name="openai",
@@ -287,8 +289,8 @@ def _create_minimax_tts() -> TTSProvider:
             "https://api.minimaxi.com/v1",
         ),
         api_key=os.getenv("MINIMAX_API_KEY"),
-        model=os.getenv("LAFVIN_TTS_MODEL", "speech-2.8-turbo"),
-        voice=os.getenv("LAFVIN_TTS_VOICE", "male-qn-qingse"),
+        model=os.getenv("MINIMAX_TTS_MODEL", "speech-2.8-turbo"),
+        voice=os.getenv("MINIMAX_TTS_VOICE", "male-qn-qingse"),
         timeout=_timeout("TTS"),
         retries=_retries("TTS"),
     )
@@ -301,8 +303,8 @@ def _create_fish_tts() -> TTSProvider:
             "https://api.fish.audio/v1",
         ),
         api_key=os.getenv("FISH_AUDIO_API_KEY"),
-        model=os.getenv("LAFVIN_TTS_MODEL", "s2.1-pro"),
-        voice=os.getenv("LAFVIN_TTS_VOICE"),
+        model=os.getenv("FISH_AUDIO_TTS_MODEL", "s2.1-pro"),
+        voice=os.getenv("FISH_AUDIO_TTS_VOICE"),
         latency=os.getenv("FISH_AUDIO_TTS_LATENCY", "balanced"),
         timeout=_timeout("TTS"),
         retries=_retries("TTS"),
@@ -310,11 +312,12 @@ def _create_fish_tts() -> TTSProvider:
 
 
 def _custom_llm_base_url() -> str:
-    value = os.getenv("LAFVIN_LLM_BASE_URL", "").strip()
+    name = "LAFVIN_OPENAI_COMPATIBLE_LLM_BASE_URL"
+    value = os.getenv(name, "").strip()
     if not value:
         raise AIConfigurationError(
             "LLM provider is openai-compatible but no endpoint is configured. "
-            "Set LAFVIN_LLM_BASE_URL."
+            f"Set {name}."
         )
     return value.rstrip("/")
 
@@ -327,8 +330,7 @@ def _service_base_url(
     return value.rstrip("/")
 
 
-def _required_model(capability: str, provider: str) -> str:
-    name = f"LAFVIN_{capability}_MODEL"
+def _required_model(name: str, capability: str, provider: str) -> str:
     value = os.getenv(name, "").strip()
     if not value:
         raise AIConfigurationError(

@@ -104,7 +104,9 @@ def test_recording_start_failure_does_not_crash_chatbot(
     async def connect(*, timeout: int):
         return app
 
-    monkeypatch.setenv("LAFVIN_AI_PROVIDER", "fake")
+    monkeypatch.setenv("LAFVIN_ASR_PROVIDER", "fake")
+    monkeypatch.setenv("LAFVIN_LLM_PROVIDER", "fake")
+    monkeypatch.setenv("LAFVIN_TTS_PROVIDER", "fake")
     monkeypatch.setattr(
         chatbot.DeviceApp,
         "connect_from_environment",
@@ -345,7 +347,9 @@ def test_voice_app_short_click_toggles_between_actions(
     async def connect(*, timeout: int):
         return app
 
-    monkeypatch.setenv("LAFVIN_AI_PROVIDER", "fake")
+    monkeypatch.setenv("LAFVIN_ASR_PROVIDER", "fake")
+    monkeypatch.setenv("LAFVIN_LLM_PROVIDER", "fake")
+    monkeypatch.setenv("LAFVIN_TTS_PROVIDER", "fake")
     monkeypatch.setattr(app_module.DeviceApp, "connect_from_environment", connect)
     monkeypatch.setattr(
         app_module,
@@ -396,7 +400,9 @@ def test_voice_app_double_click_on_back_exits(
     async def connect(*, timeout: int):
         return app
 
-    monkeypatch.setenv("LAFVIN_AI_PROVIDER", "fake")
+    monkeypatch.setenv("LAFVIN_ASR_PROVIDER", "fake")
+    monkeypatch.setenv("LAFVIN_LLM_PROVIDER", "fake")
+    monkeypatch.setenv("LAFVIN_TTS_PROVIDER", "fake")
     monkeypatch.setattr(app_module.DeviceApp, "connect_from_environment", connect)
     monkeypatch.setattr(
         app_module,

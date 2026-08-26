@@ -17,7 +17,7 @@ _PROVIDER_API_KEYS = {
     "kimi": "MOONSHOT_API_KEY",
     "minimax": "MINIMAX_API_KEY",
     "openai": "OPENAI_API_KEY",
-    "openai-compatible": "LAFVIN_LLM_API_KEY",
+    "openai-compatible": "LAFVIN_OPENAI_COMPATIBLE_LLM_API_KEY",
 }
 
 _LLM_ENDPOINTS = {
@@ -25,7 +25,32 @@ _LLM_ENDPOINTS = {
     "deepseek": ("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
     "kimi": ("MOONSHOT_BASE_URL", "https://api.moonshot.cn/v1"),
     "openai": ("OPENAI_BASE_URL", "https://api.openai.com/v1"),
-    "openai-compatible": ("LAFVIN_LLM_BASE_URL", ""),
+    "openai-compatible": (
+        "LAFVIN_OPENAI_COMPATIBLE_LLM_BASE_URL",
+        "",
+    ),
+}
+
+_PROVIDER_MODELS = {
+    ("ASR", "fish"): ("FISH_AUDIO_ASR_MODEL", "transcribe-1"),
+    ("ASR", "openai"): ("OPENAI_ASR_MODEL", "whisper-1"),
+    ("LLM", "claude"): ("ANTHROPIC_LLM_MODEL", None),
+    ("LLM", "deepseek"): ("DEEPSEEK_LLM_MODEL", None),
+    ("LLM", "kimi"): ("MOONSHOT_LLM_MODEL", None),
+    ("LLM", "openai"): ("OPENAI_LLM_MODEL", "gpt-4o-mini"),
+    ("LLM", "openai-compatible"): (
+        "LAFVIN_OPENAI_COMPATIBLE_LLM_MODEL",
+        None,
+    ),
+    ("TTS", "fish"): ("FISH_AUDIO_TTS_MODEL", "s2.1-pro"),
+    ("TTS", "minimax"): ("MINIMAX_TTS_MODEL", "speech-2.8-turbo"),
+    ("TTS", "openai"): ("OPENAI_TTS_MODEL", "tts-1"),
+}
+
+_TTS_VOICES = {
+    "fish": ("FISH_AUDIO_TTS_VOICE", None),
+    "minimax": ("MINIMAX_TTS_VOICE", "male-qn-qingse"),
+    "openai": ("OPENAI_TTS_VOICE", "alloy"),
 }
 
 
@@ -135,10 +160,9 @@ def _primary_ip_address() -> str | None:
 
 
 def _ai_state() -> dict[str, Any]:
-    common = os.getenv("LAFVIN_AI_PROVIDER")
-    asr_provider = os.getenv("LAFVIN_ASR_PROVIDER", common or "fake")
-    llm_provider = os.getenv("LAFVIN_LLM_PROVIDER", common or "fake")
-    tts_provider = os.getenv("LAFVIN_TTS_PROVIDER", common or "fake")
+    asr_provider = os.getenv("LAFVIN_ASR_PROVIDER") or "fake"
+    llm_provider = os.getenv("LAFVIN_LLM_PROVIDER") or "fake"
+    tts_provider = os.getenv("LAFVIN_TTS_PROVIDER") or "fake"
     providers = (asr_provider, llm_provider, tts_provider)
     selection = providers[0] if len(set(providers)) == 1 else "mixed"
     base_url = _llm_base_url(llm_provider)
@@ -157,10 +181,10 @@ def _ai_state() -> dict[str, Any]:
         "llm_provider": llm_provider,
         "tts_provider": tts_provider,
         "base_url_host": base_url_host,
-        "asr_model": os.getenv("LAFVIN_ASR_MODEL", "whisper-1"),
-        "llm_model": os.getenv("LAFVIN_LLM_MODEL", "gpt-4o-mini"),
-        "tts_model": os.getenv("LAFVIN_TTS_MODEL", "tts-1"),
-        "tts_voice": os.getenv("LAFVIN_TTS_VOICE", "alloy"),
+        "asr_model": _provider_model("ASR", asr_provider),
+        "llm_model": _provider_model("LLM", llm_provider),
+        "tts_model": _provider_model("TTS", tts_provider),
+        "tts_voice": _tts_voice(tts_provider),
     }
 
 
@@ -174,7 +198,13 @@ def _provider_is_configured(capability: str, provider: str) -> bool:
     if key_name is None or not os.getenv(key_name):
         return False
     if normalized == "openai-compatible":
-        return bool(os.getenv("LAFVIN_LLM_BASE_URL"))
+        if not os.getenv("LAFVIN_OPENAI_COMPATIBLE_LLM_BASE_URL"):
+            return False
+    model_setting = _PROVIDER_MODELS.get((capability, normalized))
+    if model_setting is not None:
+        variable, default = model_setting
+        if not (os.getenv(variable) or default):
+            return False
     return True
 
 
@@ -183,6 +213,22 @@ def _llm_base_url(provider: str) -> str:
     if variable_and_default is None:
         return ""
     variable, default = variable_and_default
+    return os.getenv(variable) or default
+
+
+def _provider_model(capability: str, provider: str) -> str | None:
+    setting = _PROVIDER_MODELS.get((capability, provider.strip().lower()))
+    if setting is None:
+        return None
+    variable, default = setting
+    return os.getenv(variable) or default
+
+
+def _tts_voice(provider: str) -> str | None:
+    setting = _TTS_VOICES.get(provider.strip().lower())
+    if setting is None:
+        return None
+    variable, default = setting
     return os.getenv(variable) or default
 
 

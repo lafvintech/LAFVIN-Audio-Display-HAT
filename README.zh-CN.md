@@ -134,10 +134,10 @@ LAFVIN_ASR_PROVIDER=openai
 LAFVIN_LLM_PROVIDER=openai
 LAFVIN_TTS_PROVIDER=openai
 OPENAI_API_KEY=替换为你的API_KEY
-LAFVIN_ASR_MODEL=whisper-1
-LAFVIN_LLM_MODEL=gpt-4o-mini
-LAFVIN_TTS_MODEL=tts-1
-LAFVIN_TTS_VOICE=alloy
+OPENAI_ASR_MODEL=whisper-1
+OPENAI_LLM_MODEL=gpt-4o-mini
+OPENAI_TTS_MODEL=tts-1
+OPENAI_TTS_VOICE=alloy
 ```
 
 内置 Provider 的能力与 API Key 如下：
@@ -150,21 +150,37 @@ LAFVIN_TTS_VOICE=alloy
 | `claude` | 否 | 是 | 否 | `ANTHROPIC_API_KEY` |
 | `minimax` | 否 | 否 | 是 | `MINIMAX_API_KEY` |
 | `fish` | 是 | 否 | 是 | `FISH_AUDIO_API_KEY` |
-| `openai-compatible` | 否 | 是 | 否 | `LAFVIN_LLM_API_KEY` |
+| `openai-compatible` | 否 | 是 | 否 | `LAFVIN_OPENAI_COMPATIBLE_LLM_API_KEY` |
+
+不同 Provider 使用独立的配置名称，可以同时保留在 `.env` 中。切换 Provider 时，
+无需再注释其他 Provider 的模型、音色、语言或延迟设置；程序只读取并验证当前选中的
+三个 Provider 配置段。
+
+> [!IMPORTANT]
+> `0.3.0b3` 已移除旧的 `LAFVIN_AI_PROVIDER`、`LAFVIN_ASR_MODEL`、
+> `LAFVIN_ASR_LANGUAGE`、`LAFVIN_LLM_BASE_URL`、`LAFVIN_LLM_API_KEY`、
+> `LAFVIN_LLM_MODEL`、`LAFVIN_LLM_MAX_TOKENS`、`LAFVIN_TTS_MODEL` 和
+> `LAFVIN_TTS_VOICE` 配置。请以当前 `.env.example` 为基础重新配置，或者将
+> 旧值改为下面对应的 Provider 专属变量。
+
+DeepSeek 使用 `DEEPSEEK_API_KEY` 和 `DEEPSEEK_LLM_MODEL`；Kimi 使用
+`MOONSHOT_API_KEY` 和 `MOONSHOT_LLM_MODEL`；Claude 使用
+`ANTHROPIC_API_KEY` 和 `ANTHROPIC_LLM_MODEL`。
 
 如需连接其他兼容 OpenAI Chat Completions 协议的 LLM，选择
-`openai-compatible`，并设置 `LAFVIN_LLM_BASE_URL`、`LAFVIN_LLM_API_KEY`
-和 `LAFVIN_LLM_MODEL`。项目有意不开放自定义 ASR/TTS 端点，因为不同服务的
-音频协议和格式不能假定互相兼容。
+`openai-compatible`，并设置 `LAFVIN_OPENAI_COMPATIBLE_LLM_BASE_URL`、
+`LAFVIN_OPENAI_COMPATIBLE_LLM_API_KEY` 和
+`LAFVIN_OPENAI_COMPATIBLE_LLM_MODEL`。项目有意不开放自定义 ASR/TTS 端点，
+因为不同服务的音频协议和格式不能假定互相兼容。
 
 只把 ASR 替换为 Fish Audio：
 
 ```ini
 LAFVIN_ASR_PROVIDER=fish
 FISH_AUDIO_API_KEY=替换为你的FISH_AUDIO_API_KEY
-LAFVIN_ASR_MODEL=transcribe-1
+FISH_AUDIO_ASR_MODEL=transcribe-1
 # 可选；不设置时由 Fish Audio 自动检测语言。
-# LAFVIN_ASR_LANGUAGE=zh
+# FISH_AUDIO_ASR_LANGUAGE=zh
 ```
 
 Fish Audio Transcribe-1 目前是付费 Beta API，消耗 Fish Audio API Credit，
@@ -190,8 +206,8 @@ curl -sS \
 ```ini
 LAFVIN_TTS_PROVIDER=minimax
 MINIMAX_API_KEY=替换为你的MINIMAX_API_KEY
-LAFVIN_TTS_MODEL=speech-2.8-turbo
-LAFVIN_TTS_VOICE=male-qn-qingse
+MINIMAX_TTS_MODEL=speech-2.8-turbo
+MINIMAX_TTS_VOICE=male-qn-qingse
 ```
 
 只把 TTS 替换为 Fish Audio：
@@ -199,10 +215,10 @@ LAFVIN_TTS_VOICE=male-qn-qingse
 ```ini
 LAFVIN_TTS_PROVIDER=fish
 FISH_AUDIO_API_KEY=替换为你的FISH_AUDIO_API_KEY
-LAFVIN_TTS_MODEL=s2.1-pro
-# 可选：删除原来的 OpenAI 音色，或把它改成 Fish Audio reference ID。
-# 不填写 reference ID 时，由 Fish Audio 使用默认音色。
-# LAFVIN_TTS_VOICE=你的Fish音色ReferenceID
+FISH_AUDIO_TTS_MODEL=s2.1-pro
+# 可选的 Fish Audio reference ID；留空时使用服务默认音色。
+FISH_AUDIO_TTS_VOICE=你的Fish音色ReferenceID
+FISH_AUDIO_TTS_LATENCY=balanced
 ```
 
 内置服务地址默认已经生效。`MINIMAX_TTS_BASE_URL`、`FISH_AUDIO_BASE_URL`

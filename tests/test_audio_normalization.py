@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from lafvin_hat.ai import audio_normalization
 from lafvin_hat.ai import (
     AudioNormalizationError,
     AudioResult,
@@ -115,6 +116,38 @@ def test_overstated_wav_frame_count_uses_complete_physical_frames(
     parameters, normalized = _read_wav(destination)
     assert parameters == (1, 2, 24000, 8)
     assert normalized.tolist() == samples.tolist()
+
+
+def test_streaming_wav_placeholder_sizes_use_physical_frames(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "fish-streaming-response.wav"
+    destination = tmp_path / "normalized.wav"
+    samples = np.arange(8, dtype="<i2") * 1000
+    _write_wav(source, samples, sample_rate=24000, sample_width=2)
+    _set_wav_riff_and_data_sizes(source, 0xFFFFFFFF)
+
+    normalize_tts_output_wav(source, destination)
+
+    parameters, normalized = _read_wav(destination)
+    assert parameters == (1, 2, 24000, 8)
+    assert normalized.tolist() == samples.tolist()
+
+
+def test_pcm_input_limit_rejects_large_physical_response(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = tmp_path / "oversized.wav"
+    destination = tmp_path / "normalized.wav"
+    samples = np.arange(16, dtype="<i2")
+    _write_wav(source, samples, sample_rate=24000, sample_width=2)
+    monkeypatch.setattr(audio_normalization, "_MAX_PCM_INPUT_BYTES", 16)
+
+    with pytest.raises(AudioNormalizationError, match="normalization limit"):
+        normalize_tts_output_wav(source, destination)
+
+    assert not destination.exists()
 
 
 def test_partial_pcm_frame_is_still_rejected(tmp_path: Path) -> None:
@@ -247,6 +280,14 @@ def _read_wav(path: Path) -> tuple[tuple[int, int, int, int], np.ndarray]:
 
 def _set_wav_data_size(path: Path, size: int) -> None:
     content = bytearray(path.read_bytes())
+    size_offset = content.index(b"data") + 4
+    content[size_offset:size_offset + 4] = size.to_bytes(4, "little")
+    path.write_bytes(content)
+
+
+def _set_wav_riff_and_data_sizes(path: Path, size: int) -> None:
+    content = bytearray(path.read_bytes())
+    content[4:8] = size.to_bytes(4, "little")
     size_offset = content.index(b"data") + 4
     content[size_offset:size_offset + 4] = size.to_bytes(4, "little")
     path.write_bytes(content)

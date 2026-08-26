@@ -193,7 +193,7 @@ def test_fish_audio_asr_rejects_missing_audio(tmp_path: Path) -> None:
 
 
 def test_fish_audio_asr_rejects_unsupported_model() -> None:
-    with pytest.raises(ValueError, match="LAFVIN_ASR_MODEL=transcribe-1"):
+    with pytest.raises(ValueError, match="FISH_AUDIO_ASR_MODEL=transcribe-1"):
         FishAudioASR(model="whisper-1")
 
 

@@ -15,6 +15,9 @@ from .providers import ASRProvider, TTSProvider, aclose_provider
 
 logger = logging.getLogger(__name__)
 
+_PCM_READ_CHUNK_BYTES = 64 * 1024
+_MAX_PCM_INPUT_BYTES = 32 * 1024 * 1024
+
 
 @dataclass(frozen=True, slots=True)
 class PCMFormat:
@@ -89,9 +92,24 @@ def normalize_pcm_wav(
     _validate_target_format(target_format)
     source = Path(source_path)
     output = Path(output_path)
-    samples, source_rate = _read_pcm_wav(source)
+    frames, source_format = _read_pcm_wav(source)
+    if source_format == target_format:
+        _write_pcm_wav_atomic(output, frames, target_format)
+        return output
+
+    samples = _decode_integer_pcm(frames, source_format.sample_width)
+    expected_samples = len(frames) // source_format.sample_width
+    if samples.size != expected_samples:
+        raise AudioNormalizationError(
+            f"WAV audio contains incomplete PCM samples: {source}"
+        )
+    samples = samples.reshape(-1, source_format.channels)
     mono = samples.mean(axis=1, dtype=np.float64)
-    resampled = _resample(mono, source_rate, target_format.sample_rate)
+    resampled = _resample(
+        mono,
+        source_format.sample_rate,
+        target_format.sample_rate,
+    )
     pcm = _encode_pcm_s16_le(resampled)
     _write_pcm_wav_atomic(output, pcm, target_format)
     return output
@@ -166,7 +184,7 @@ def _validate_target_format(target_format: PCMFormat) -> None:
         raise ValueError("target format must be signed 16-bit mono PCM")
 
 
-def _read_pcm_wav(path: Path) -> tuple[np.ndarray, int]:
+def _read_pcm_wav(path: Path) -> tuple[bytes, PCMFormat]:
     try:
         with wave.open(str(path), "rb") as source:
             if source.getcomptype() != "NONE":
@@ -176,38 +194,64 @@ def _read_pcm_wav(path: Path) -> tuple[np.ndarray, int]:
             channels = source.getnchannels()
             sample_width = source.getsampwidth()
             sample_rate = source.getframerate()
-            frame_count = source.getnframes()
-            frames = source.readframes(frame_count)
+            declared_frame_count = source.getnframes()
+            if channels <= 0 or sample_rate <= 0:
+                raise AudioNormalizationError(
+                    f"WAV audio has invalid parameters: {path}"
+                )
+            if sample_width not in {1, 2, 3, 4}:
+                raise AudioNormalizationError(
+                    f"Unsupported integer PCM sample width: {sample_width} bytes"
+                )
+            bytes_per_frame = channels * sample_width
+            frames_per_read = max(
+                1,
+                _PCM_READ_CHUNK_BYTES // bytes_per_frame,
+            )
+            chunks: list[bytes] = []
+            actual_bytes = 0
+            while True:
+                chunk = source.readframes(frames_per_read)
+                if not chunk:
+                    break
+                actual_bytes += len(chunk)
+                if actual_bytes > _MAX_PCM_INPUT_BYTES:
+                    raise AudioNormalizationError(
+                        "WAV audio exceeds the normalization limit of "
+                        f"{_MAX_PCM_INPUT_BYTES} bytes: {path}"
+                    )
+                chunks.append(chunk)
     except AudioNormalizationError:
         raise
+    except MemoryError as exc:
+        raise AudioNormalizationError(
+            f"WAV audio could not be read within the memory limit: {path}"
+        ) from exc
     except (OSError, EOFError, wave.Error) as exc:
         raise AudioNormalizationError(f"Cannot read PCM WAV audio: {path}") from exc
 
-    if channels <= 0 or sample_rate <= 0:
-        raise AudioNormalizationError(f"WAV audio has invalid parameters: {path}")
-    bytes_per_frame = channels * sample_width
-    if bytes_per_frame <= 0 or len(frames) % bytes_per_frame:
+    frames = b"".join(chunks)
+    if len(frames) % bytes_per_frame:
         raise AudioNormalizationError(
             f"WAV audio ends with an incomplete PCM frame: {path}"
         )
     actual_frame_count = len(frames) // bytes_per_frame
     if actual_frame_count <= 0:
         raise AudioNormalizationError(f"WAV audio contains no samples: {path}")
-    if actual_frame_count != frame_count:
+    if actual_frame_count != declared_frame_count:
         logger.warning(
             "stage=audio_normalization event=wav_frame_count_mismatch "
-            "path=%s declared_frames=%s actual_frames=%s",
+            "path=%s file_bytes=%s declared_frames=%s actual_frames=%s",
             path,
-            frame_count,
+            path.stat().st_size,
+            declared_frame_count,
             actual_frame_count,
         )
-    decoded = _decode_integer_pcm(frames, sample_width)
-    expected_samples = actual_frame_count * channels
-    if decoded.size != expected_samples:
-        raise AudioNormalizationError(
-            f"WAV audio contains incomplete PCM samples: {path}"
-        )
-    return decoded.reshape(actual_frame_count, channels), sample_rate
+    return frames, PCMFormat(
+        sample_rate=sample_rate,
+        channels=channels,
+        sample_width=sample_width,
+    )
 
 
 def _decode_integer_pcm(frames: bytes, sample_width: int) -> np.ndarray:

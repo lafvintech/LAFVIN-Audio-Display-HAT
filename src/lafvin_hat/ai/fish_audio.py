@@ -60,7 +60,7 @@ class FishAudioASR:
         if self.model != self._MODEL:
             raise ValueError(
                 "Fish Audio ASR model must be transcribe-1; "
-                "set LAFVIN_ASR_MODEL=transcribe-1"
+                "set FISH_AUDIO_ASR_MODEL=transcribe-1"
             )
         self.language = (
             language.strip() if language and language.strip() else None
