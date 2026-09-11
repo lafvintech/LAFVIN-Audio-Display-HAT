@@ -12,7 +12,7 @@ LAFVIN Audio Display HAT 是一套面向 Raspberry Pi 的便携式音频与显�
 - 单一 Runtime 统一管理显示屏、按钮、RGB LED、背光、音频、应用生命周期和持久化应用数据；
 - 原生 Raspberry Pi Backend 支持 LAFVIN Audio Display HAT，并包含版本化的 WM8960 硬件 Profile；
 - Raw Frame SDK 和 UI Toolkit 让应用在实机和模拟器中使用相同的最终画面；
-- 内置六个前台应用：System Status、Volume、Chatbot、Translator、One Button Jump 和 Video Player；
+- 内置七个前台应用：System Status、Volume、Chatbot、Translator、Dino Runner、Video Player 和 RGB LED；
 - Hardware Test 由 Runtime 托管，可以快速启动并直接访问硬件；
 - Checkout-backed 部署提供统一的 `lafvin-hat` 命令、systemd 集成、应用日志和简单的 Git 更新流程。
 
@@ -563,14 +563,15 @@ lafvin-hat sim button released
 
 ## 应用渲染方式
 
-- System Status、Volume、Chatbot 和 Translator 使用 `lafvin_hat.ui`
-  中面向应用的 Raw Frame Toolkit；
-- One Button Jump 和 Video Player 直接绘制自定义 Raw Frame；
+- System Status、Volume、Chatbot、Translator 和 Dino Runner 使用
+  `lafvin_hat.ui` 中面向应用的 Raw Frame Toolkit；
+- Video Player 直接绘制自定义 Raw Frame；
 - Runtime Home、Shell 和托管的 Hardware Test 由 Runtime 管理；
 - 旧的声明式 UI 服务仅为兼容和 Runtime 内部功能保留，第一方前台应用使用
   Raw Frame manifest。
 
-Video Player 的视频文件固定放在 `assets/videos/test.mp4`。
+Video Player 的一个或多个视频文件放在 `assets/videos/`。支持
+`.mp4`、`.mov`、`.mkv`、`.webm` 和 `.avi`，选择页按文件名排序。
 
 应用 manifest、Toolkit、Raw Frame 生命周期、日志和所有权边界请阅读
 [`docs/APP_DEVELOPMENT.md`](docs/APP_DEVELOPMENT.md)，视觉规范请阅读

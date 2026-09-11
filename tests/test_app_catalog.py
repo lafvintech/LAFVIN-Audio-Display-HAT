@@ -29,6 +29,7 @@ def test_first_party_catalog_matches_sources_and_home_order() -> None:
         "dev.lafvin.translator",
         "dev.lafvin.jump",
         "dev.lafvin.video-player",
+        "dev.lafvin.rgb-led",
     ]
     assert apps[0].provisioning == "runtime-hosted"
     assert all(app.provisioning == "bundled" for app in apps[1:])
@@ -53,7 +54,7 @@ def test_runtime_first_party_provisioning_targets_runtime_data_dir(
 ) -> None:
     manifests = provision_first_party_apps(tmp_path, project_root=ROOT)
 
-    assert len(manifests) == 6
+    assert len(manifests) == 7
     assert all(
         (tmp_path / "apps" / manifest.app_id / "manifest.yaml").is_file()
         for manifest in manifests
@@ -73,7 +74,11 @@ def test_catalog_bundled_sources_use_current_game_directory() -> None:
         "apps/translator",
         "apps/one_button_jump",
         "apps/video_player",
+        "apps/rgb_led",
     ]
+    dino_runner = next(app for app in apps if app.app_id == "dev.lafvin.jump")
+    assert dino_runner.name == "Dino Runner"
+    assert dino_runner.implementation == "toolkit"
 
 
 def test_catalog_rejects_duplicate_home_order(tmp_path: Path) -> None:

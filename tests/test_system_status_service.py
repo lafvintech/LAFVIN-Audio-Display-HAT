@@ -2,6 +2,7 @@ import asyncio
 from pathlib import Path
 
 from lafvin_hat.runtime.status import SystemStatusService
+from lafvin_hat.runtime.status import service as status_service
 
 
 class AppManagerStub:
@@ -90,9 +91,11 @@ def test_system_status_collects_non_secret_state(
         assert result["audio"]["volume"] == 70
         assert result["apps"]["installed_count"] == 1
         assert result["apps"]["running_count"] == 1
+        assert set(result["resources"]) == {"cpu", "memory"}
         assert result["storage"]["data_dir"] == str(tmp_path / "data")
         assert isinstance(result["storage"]["used_bytes"], int)
         assert isinstance(result["storage"]["total_bytes"], int)
+        assert isinstance(result["storage"]["usage_percent"], float)
         assert result["ai"]["configured"] is True
         assert result["ai"]["provider"] == "mixed"
         assert result["ai"]["base_url_host"] == "llm.example"
@@ -132,3 +135,48 @@ def test_system_status_reports_only_selected_provider_settings(
         assert "fish-secret" not in repr(result)
 
     asyncio.run(scenario())
+
+
+def test_cpu_usage_uses_counter_deltas() -> None:
+    assert status_service._cpu_usage_percent((100, 200), (130, 300)) == 70.0
+    assert status_service._cpu_usage_percent(None, (130, 300)) is None
+    assert status_service._cpu_usage_percent((130, 300), (100, 200)) is None
+
+
+def test_cpu_times_parse_linux_proc_stat(tmp_path: Path) -> None:
+    stat = tmp_path / "stat"
+    stat.write_text(
+        "cpu  10 2 8 70 5 1 3 1 0 0\ncpu0 1 1 1 1\n",
+        encoding="utf-8",
+    )
+
+    assert status_service._read_cpu_times(stat) == (75, 100)
+
+
+def test_memory_usage_uses_mem_available(tmp_path: Path) -> None:
+    meminfo = tmp_path / "meminfo"
+    meminfo.write_text(
+        "MemTotal:       1000 kB\n"
+        "MemFree:         100 kB\n"
+        "MemAvailable:    400 kB\n"
+        "Buffers:          50 kB\n"
+        "Cached:          200 kB\n",
+        encoding="utf-8",
+    )
+
+    assert status_service._memory_state(meminfo) == {
+        "used_bytes": 600 * 1024,
+        "total_bytes": 1000 * 1024,
+        "usage_percent": 60.0,
+    }
+
+
+def test_resource_readers_handle_missing_proc_files(tmp_path: Path) -> None:
+    missing = tmp_path / "missing"
+
+    assert status_service._read_cpu_times(missing) is None
+    assert status_service._memory_state(missing) == {
+        "used_bytes": None,
+        "total_bytes": None,
+        "usage_percent": None,
+    }

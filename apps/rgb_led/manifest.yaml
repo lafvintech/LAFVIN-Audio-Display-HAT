@@ -1,0 +1,25 @@
+schema_version: 1
+id: dev.lafvin.rgb-led
+name: RGB LED
+version: 0.1.0
+description: RGB LED gradient lamp with short-press color switching
+
+entrypoint:
+  executable: python
+  args:
+    - main.py
+  working_directory: .
+
+permissions:
+  - display.raw_frame
+  - button
+  - led
+
+ui:
+  mode: raw_frame
+
+lifecycle:
+  startup_timeout_sec: 10
+  exit_timeout_sec: 3
+  restart: never
+  max_restarts: 0

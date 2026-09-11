@@ -5,10 +5,11 @@ import math
 import struct
 import tempfile
 import wave
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 from pathlib import Path
 
-from .models import AudioResult, LLMChunk, Message
+from .models import AudioResult, LLMChunk, Message, ToolDefinition
+from .providers import ToolExecutor
 
 
 class FakeASRProvider:
@@ -42,8 +43,11 @@ class FakeLLMProvider:
     async def stream_chat(
         self,
         messages: list[Message],
+        *,
+        tools: Sequence[ToolDefinition] = (),
+        tool_executor: ToolExecutor | None = None,
     ) -> AsyncIterator[LLMChunk]:
-        del messages
+        del messages, tools, tool_executor
         for offset in range(0, len(self.response), self.chunk_size):
             await asyncio.sleep(0)
             yield LLMChunk(self.response[offset:offset + self.chunk_size])
@@ -123,8 +127,15 @@ class FakeAIProvider:
     def stream_chat(
         self,
         messages: list[Message],
+        *,
+        tools: Sequence[ToolDefinition] = (),
+        tool_executor: ToolExecutor | None = None,
     ) -> AsyncIterator[LLMChunk]:
-        return self.llm.stream_chat(messages)
+        return self.llm.stream_chat(
+            messages,
+            tools=tools,
+            tool_executor=tool_executor,
+        )
 
     async def synthesize(
         self,

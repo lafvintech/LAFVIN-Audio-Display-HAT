@@ -7,13 +7,13 @@ import os
 import re
 import time
 import unicodedata
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
 from .audio_normalization import AudioNormalizationError, pcm_wav_duration_ms
-from .models import Message, SpeechSegment
-from .providers import LLMProvider, TTSProvider
+from .models import Message, SpeechSegment, ToolDefinition
+from .providers import LLMProvider, TTSProvider, ToolExecutor
 
 
 logger = logging.getLogger(__name__)
@@ -29,6 +29,11 @@ _MARKDOWN_SEPARATOR = re.compile(r"(?m)^[ \t]*(?:[-*_][ \t]*){3,}$")
 _MARKDOWN_LINE_PREFIX = re.compile(
     r"(?m)^[ \t]{0,3}(?:#{1,6}[ \t]+|>[ \t]?|(?:[-+*]|\d+[.)])[ \t]+)"
 )
+_IPV4_ADDRESS = re.compile(
+    r"(?<![\d.])(?P<address>\d{1,3}(?:\.\d{1,3}){3})(?!\d|\.\d)"
+)
+_DECIMAL_SEPARATOR = re.compile(r"(?<=\d)\.(?=\d)")
+_CJK_CHARACTER = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]")
 
 
 class PipelineStageError(RuntimeError):
@@ -99,6 +104,77 @@ class SentenceSplitter:
         if not value:
             return None
         return SentencePart(value, display_end)
+
+
+class SpeechChunker:
+    """Combine sentence parts into bounded, ordered TTS request units."""
+
+    def __init__(
+        self,
+        *,
+        target_units: int,
+        max_sentences: int,
+        hard_limit_units: int,
+        first_chunk_immediate: bool = True,
+    ) -> None:
+        if target_units <= 0:
+            raise ValueError("target_units must be positive")
+        if max_sentences <= 0:
+            raise ValueError("max_sentences must be positive")
+        if hard_limit_units < target_units:
+            raise ValueError(
+                "hard_limit_units must be greater than or equal to target_units"
+            )
+        self._target_units = target_units
+        self._max_sentences = max_sentences
+        self._hard_limit_units = hard_limit_units
+        self._first_chunk_immediate = first_chunk_immediate
+        self._pending: list[SentencePart] = []
+        self._emitted = False
+
+    def feed(self, part: SentencePart) -> list[SentencePart]:
+        emitted: list[SentencePart] = []
+        for candidate in _split_long_speech_part(
+            part,
+            self._hard_limit_units,
+        ):
+            if self._first_chunk_immediate and not self._emitted:
+                emitted.append(candidate)
+                self._emitted = True
+                continue
+
+            if self._pending and (
+                _combined_speech_units([*self._pending, candidate])
+                > self._hard_limit_units
+            ):
+                emitted.append(self._take_pending())
+
+            self._pending.append(candidate)
+            if (
+                _combined_speech_units(self._pending) >= self._target_units
+                or len(self._pending) >= self._max_sentences
+            ):
+                emitted.append(self._take_pending())
+
+        return emitted
+
+    def flush(self) -> SentencePart | None:
+        if not self._pending:
+            return None
+        return self._take_pending()
+
+    def _take_pending(self) -> SentencePart:
+        combined = SentencePart(
+            " ".join(
+                part.text.strip()
+                for part in self._pending
+                if part.text.strip()
+            ),
+            self._pending[-1].display_end,
+        )
+        self._pending.clear()
+        self._emitted = True
+        return combined
 
 
 @dataclass(frozen=True, slots=True)
@@ -318,17 +394,33 @@ class TTSQueue:
             )
             completed = False
             playback_duration_ms: int | None = None
+            playback_task: asyncio.Task[None] | None = None
             try:
-                await self._notify_playback_start(segment)
                 started_at = time.monotonic()
-                await self._play_audio(segment.path)
+                playback_task = asyncio.create_task(
+                    self._play_audio(segment.path),
+                    name=f"audio-playback-{segment.sequence}",
+                )
+                # Let the Runtime playback request leave the App before a
+                # potentially expensive display observer calculates layout.
+                await asyncio.sleep(0)
+                await self._notify_playback_start(segment)
+                await playback_task
                 completed = True
                 playback_duration_ms = int(
                     (time.monotonic() - started_at) * 1000
                 )
             except asyncio.CancelledError:
+                if playback_task is not None:
+                    if not playback_task.done():
+                        playback_task.cancel()
+                    await asyncio.gather(playback_task, return_exceptions=True)
                 raise
             except Exception as exc:
+                if playback_task is not None:
+                    if not playback_task.done():
+                        playback_task.cancel()
+                    await asyncio.gather(playback_task, return_exceptions=True)
                 raise PipelineStageError(
                     "audio_playback",
                     (
@@ -404,8 +496,22 @@ class StreamingSpeechPipeline:
         on_playback_end: (
             Callable[[SpeechSegment, bool], Awaitable[None]] | None
         ) = None,
+        tools: Sequence[ToolDefinition] = (),
+        tool_executor: ToolExecutor | None = None,
+        speech_chunk_target_units: int | None = None,
+        speech_chunk_max_sentences: int = 2,
+        speech_chunk_hard_limit_units: int = 180,
     ) -> str:
         splitter = SentenceSplitter()
+        chunker = (
+            SpeechChunker(
+                target_units=speech_chunk_target_units,
+                max_sentences=speech_chunk_max_sentences,
+                hard_limit_units=speech_chunk_hard_limit_units,
+            )
+            if speech_chunk_target_units is not None
+            else None
+        )
         queue = TTSQueue(
             self._tts,
             play_audio,
@@ -419,7 +525,11 @@ class StreamingSpeechPipeline:
         try:
             logger.info("stage=llm_stream event=start messages=%s", len(messages))
             try:
-                async for chunk in self._llm.stream_chat(messages):
+                async for chunk in self._llm.stream_chat(
+                    messages,
+                    tools=tools,
+                    tool_executor=tool_executor,
+                ):
                     if chunk.text:
                         full_text += chunk.text
                         pending_text += chunk.text
@@ -429,10 +539,16 @@ class StreamingSpeechPipeline:
                             pending_text = ""
                             next_flush = time.monotonic() + text_flush_interval
                         for part in parts:
-                            await queue.put(
-                                part.text,
-                                display_end=part.display_end,
+                            speech_parts = (
+                                chunker.feed(part)
+                                if chunker is not None
+                                else [part]
                             )
+                            for speech_part in speech_parts:
+                                await queue.put(
+                                    speech_part.text,
+                                    display_end=speech_part.display_end,
+                                )
                         if (
                             text_flush_interval <= 0
                             or time.monotonic() >= next_flush
@@ -460,9 +576,19 @@ class StreamingSpeechPipeline:
                 await on_text(pending_text)
             remainder = splitter.flush_part()
             if remainder:
+                speech_parts = (
+                    chunker.feed(remainder) if chunker is not None else [remainder]
+                )
+                for speech_part in speech_parts:
+                    await queue.put(
+                        speech_part.text,
+                        display_end=speech_part.display_end,
+                    )
+            final_speech_part = chunker.flush() if chunker is not None else None
+            if final_speech_part is not None:
                 await queue.put(
-                    remainder.text,
-                    display_end=remainder.display_end,
+                    final_speech_part.text,
+                    display_end=final_speech_part.display_end,
                 )
             await queue.finish()
             return full_text
@@ -502,6 +628,18 @@ def prepare_text_for_speech(text: str) -> str:
     value = re.sub(r"(?<!\w)[*_](?=\w)", "", value)
     value = re.sub(r"(?<=\w)[*_](?!\w)", "", value)
     value = value.replace("|", " ")
+    numeric_separator = "点" if _CJK_CHARACTER.search(value) else None
+    value = _IPV4_ADDRESS.sub(
+        lambda match: _spoken_ipv4(
+            match.group("address"),
+            separator=numeric_separator or "dot",
+        ),
+        value,
+    )
+    value = _DECIMAL_SEPARATOR.sub(
+        numeric_separator or " point ",
+        value,
+    )
     value = "".join(
         " " if unicodedata.category(char) in {"So", "Sk"} else char
         for char in value
@@ -515,6 +653,8 @@ def prepare_text_for_speech(text: str) -> str:
 def _is_sentence_boundary(text: str, index: int, char: str) -> bool:
     if char != ".":
         return True
+    if index + 1 >= len(text):
+        return False
     previous = text[index - 1] if index > 0 else ""
     following = text[index + 1] if index + 1 < len(text) else ""
     if previous.isalnum() and following.isalnum():
@@ -523,6 +663,77 @@ def _is_sentence_boundary(text: str, index: int, char: str) -> bool:
     if re.fullmatch(r"[ \t]*\d+\.", text[line_start:index + 1]):
         return False
     return True
+
+
+def _spoken_ipv4(address: str, *, separator: str) -> str:
+    joiner = separator if separator == "点" else f" {separator} "
+    return joiner.join(address.split("."))
+
+
+def _speech_units(text: str) -> int:
+    return sum(2 if _CJK_CHARACTER.fullmatch(char) else 1 for char in text)
+
+
+def _combined_speech_units(parts: Sequence[SentencePart]) -> int:
+    if not parts:
+        return 0
+    return (
+        sum(_speech_units(part.text.strip()) for part in parts)
+        + len(parts)
+        - 1
+    )
+
+
+def _split_long_speech_part(
+    part: SentencePart,
+    hard_limit_units: int,
+) -> list[SentencePart]:
+    text = part.text.strip()
+    if not text or _speech_units(text) <= hard_limit_units:
+        return [part]
+
+    part_start = part.display_end - len(text)
+    pieces: list[SentencePart] = []
+    start = 0
+    while start < len(text):
+        end = start
+        units = 0
+        while end < len(text):
+            char_units = _speech_units(text[end])
+            if units and units + char_units > hard_limit_units:
+                break
+            units += char_units
+            end += 1
+        if end >= len(text):
+            raw_piece = text[start:]
+            piece = raw_piece.strip()
+            if piece:
+                pieces.append(SentencePart(piece, part.display_end))
+            break
+
+        whitespace = next(
+            (
+                index
+                for index in range(end - 1, start, -1)
+                if text[index].isspace()
+            ),
+            None,
+        )
+        cut = whitespace if whitespace is not None else end
+        raw_piece = text[start:cut]
+        piece = raw_piece.strip()
+        if piece:
+            piece_end = cut - len(raw_piece) + len(raw_piece.rstrip())
+            pieces.append(
+                SentencePart(
+                    piece,
+                    part_start + piece_end,
+                )
+            )
+        start = cut
+        while start < len(text) and text[start].isspace():
+            start += 1
+    return pieces
 
 
 def _content_logging_enabled() -> bool:

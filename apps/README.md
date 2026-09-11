@@ -6,8 +6,9 @@ The first-party application set contains:
 - `translator/`: Raw Frame toolkit voice translator using the shared AI stack
 - `system_status/`: Raw Frame toolkit Runtime and device status page
 - `system_volume/`: Raw Frame toolkit Runtime volume control page
-- `one_button_jump/`: custom Raw Frame game loop and low-latency button input
+- `one_button_jump/`: Toolkit-rendered Dino Runner with low-latency button input
 - `video_player/`: custom Raw Frame MP4/local video playback trial
+- `rgb_led/`: RGB LED gradient lamp with short-press color switching
 
 V3 records the authoritative first-party identity, provisioning type, intended
 Home order, and implementation type in [`catalog.yaml`](catalog.yaml). Validate
@@ -36,6 +37,7 @@ lafvin-hat app run apps/chatbot
 lafvin-hat app run apps/translator
 lafvin-hat app run apps/system_status
 lafvin-hat app run apps/system_volume
+lafvin-hat app run apps/rgb_led
 ```
 
 Use `--follow` when app logs matter during development:
@@ -54,7 +56,8 @@ lafvin-hat app start dev.lafvin.chatbot
 
 Milestone notes:
 
-- M3 added the One Button Jump Raw Frame game.
+- M3 added the original One Button Jump Raw Frame game; it is now the
+  Toolkit-rendered Dino Runner while retaining the source path and App ID.
 - M5 added Chatbot and Translator on the shared Runtime audio and AI services.
 - V2-M5 added Video Player as a standalone media app, not a Runtime-owned media service.
 - V2-M5.1 and M5.2 moved System Status and Volume into bundled apps.
@@ -62,3 +65,5 @@ Milestone notes:
   as the Home system app `dev.lafvin.hardware-test`.
 - V2-M6 moved System Status, Volume, Translator, and Chatbot onto the app-facing
   Raw Frame toolkit.
+- RGB LED is a bundled lamp App: gradient cycle by default, short-press to
+  switch palette colors, double-click to resume the gradient.

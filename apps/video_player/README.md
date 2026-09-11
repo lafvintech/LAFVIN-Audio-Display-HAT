@@ -1,11 +1,11 @@
 # Video Player
 
-Standalone V2-M5 Raw Frame video playback app.
+Standalone Raw Frame video browser and player.
 
-Place the playback file at:
+Place one or more video files in:
 
 ```text
-assets/videos/test.mp4
+assets/videos/
 ```
 
 Supported suffixes:
@@ -36,7 +36,19 @@ lafvin-hat app install apps/video_player
 lafvin-hat app start dev.lafvin.video-player
 ```
 
-To play a different file, edit `VIDEO_FILENAME` in `main.py`.
+Videos are sorted by filename. The selection screen shows the current file and
+its position in the list.
+
+Controls:
+
+- single click: select the next video
+- double click: play the selected video
+- triple click: stop playback and return Home
+
+During playback, single-click stops the current video and returns to the
+selection screen. Double-click is ignored so it cannot queue an unexpected
+action. The selected video loops when it reaches the end. Triple-click remains
+available through the Runtime shell and returns Home directly.
 
 The video player draws video and message frames directly instead of using the
 UI toolkit. Triple-click exits through the Runtime shell, like the other

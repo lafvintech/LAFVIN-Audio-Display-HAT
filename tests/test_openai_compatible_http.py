@@ -1,4 +1,5 @@
 import asyncio
+import json
 from pathlib import Path
 from typing import Any
 
@@ -9,6 +10,8 @@ from lafvin_hat.ai import (
     OpenAICompatibleASR,
     OpenAICompatibleLLM,
     OpenAICompatibleTTS,
+    ToolCall,
+    ToolDefinition,
 )
 from lafvin_hat.ai import openai_compatible
 
@@ -286,6 +289,115 @@ def test_cancelled_tts_request_keeps_client_reusable(
         assert fake_httpx.clients[0].close_calls == 1
 
     asyncio.run(scenario())
+
+
+def test_openai_tool_call_executes_and_continues_stream(
+    fake_httpx: FakeHTTPX,
+) -> None:
+    provider = OpenAICompatibleLLM(
+        base_url="https://openai.invalid/v1",
+        provider_name="openai",
+    )
+    first_parts = [
+        {
+            "choices": [
+                {
+                    "delta": {
+                        "tool_calls": [
+                            {
+                                "index": 0,
+                                "id": "call-1",
+                                "type": "function",
+                                "function": {
+                                    "name": "set_",
+                                    "arguments": '{"percent":',
+                                },
+                            }
+                        ]
+                    }
+                }
+            ]
+        },
+        {
+            "choices": [
+                {
+                    "delta": {
+                        "tool_calls": [
+                            {
+                                "index": 0,
+                                "function": {
+                                    "name": "volume",
+                                    "arguments": "60}",
+                                },
+                            }
+                        ]
+                    },
+                    "finish_reason": "tool_calls",
+                }
+            ]
+        },
+    ]
+    fake_httpx.stream_results = [
+        FakeResponse(
+            lines=[
+                *(f"data: {json.dumps(part)}" for part in first_parts),
+                "data: [DONE]",
+            ]
+        ),
+        _llm_response("Volume is now 60%."),
+    ]
+    definition = ToolDefinition(
+        "set_volume",
+        "Set speaker volume.",
+        {
+            "type": "object",
+            "properties": {"percent": {"type": "integer"}},
+            "required": ["percent"],
+        },
+    )
+    observed: list[ToolCall] = []
+
+    async def execute(call: ToolCall) -> str:
+        observed.append(call)
+        return '{"ok":true,"volume_percent":60}'
+
+    async def scenario() -> None:
+        result = "".join([
+            chunk.text
+            async for chunk in provider.stream_chat(
+                [Message("user", "Set volume to 60 percent")],
+                tools=[definition],
+                tool_executor=execute,
+            )
+        ])
+
+        assert result == "Volume is now 60%."
+        assert observed == [
+            ToolCall("call-1", "set_volume", {"percent": 60})
+        ]
+        await provider.aclose()
+
+    asyncio.run(scenario())
+
+    assert len(fake_httpx.calls) == 2
+    first_payload = fake_httpx.calls[0]["json"]
+    assert first_payload["tools"] == [
+        {
+            "type": "function",
+            "function": {
+                "name": "set_volume",
+                "description": "Set speaker volume.",
+                "parameters": definition.parameters,
+            },
+        }
+    ]
+    follow_up_messages = fake_httpx.calls[1]["json"]["messages"]
+    assert follow_up_messages[-2]["tool_calls"][0]["id"] == "call-1"
+    assert follow_up_messages[-1] == {
+        "role": "tool",
+        "content": '{"ok":true,"volume_percent":60}',
+        "tool_call_id": "call-1",
+    }
 
 
 async def _collect(provider: OpenAICompatibleLLM) -> str:

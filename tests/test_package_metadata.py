@@ -32,24 +32,34 @@ def test_root_release_files_are_present() -> None:
     )
 
 
-def test_declared_test_media_checksums_match_files() -> None:
+def test_declared_media_checksums_match_files() -> None:
     notices = (ROOT / "docs" / "THIRD_PARTY_NOTICES.md").read_text(
         encoding="utf-8"
     )
-    media_section = notices.split("## Project-Created Test Media", maxsplit=1)[1]
     row_pattern = re.compile(
-        r"^\| `(?P<path>assets/(?:audio|videos)/[^`]+)` \| [^|]+ \| "
+        r"^\| `(?P<path>assets/(?:audio|emoji|videos)/[^`]+)` \| [^|]+ \| "
         r"`(?P<sha256>[0-9A-F]{64})` \|$",
         re.MULTILINE,
     )
     declared = {
         match.group("path"): match.group("sha256")
-        for match in row_pattern.finditer(media_section)
+        for match in row_pattern.finditer(notices)
     }
 
     assert set(declared) == {
         "assets/audio/audio_test.wav",
-        "assets/videos/test.mp4",
+        "assets/emoji/1f600.png",
+        "assets/emoji/1f602.png",
+        "assets/emoji/1f634.png",
+        "assets/emoji/1f642.png",
+        "assets/emoji/1f914.png",
+        "assets/emoji/1f917.png",
+        "assets/emoji/203c.png",
+        "assets/emoji/2639.png",
+        "assets/emoji/26a0.png",
+        "assets/videos/1.mp4",
+        "assets/videos/2.mp4",
+        "assets/videos/3.mp4",
     }
     for relative_path, expected_sha256 in declared.items():
         actual_sha256 = hashlib.sha256(

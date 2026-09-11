@@ -3,7 +3,12 @@ from typing import Any
 
 import pytest
 
-from lafvin_hat.ai import AnthropicLLM, Message
+from lafvin_hat.ai import (
+    AnthropicLLM,
+    Message,
+    ToolCall,
+    ToolDefinition,
+)
 from lafvin_hat.ai import anthropic as anthropic_module
 
 
@@ -137,11 +142,104 @@ def test_anthropic_stream_maps_system_messages_and_text_deltas(
     }
 
 
-def test_anthropic_rejects_unsupported_message_roles() -> None:
+def test_anthropic_tool_message_requires_call_id() -> None:
     provider = AnthropicLLM(api_key="secret", model="claude-model")
 
     async def scenario() -> None:
-        with pytest.raises(ValueError, match="Unsupported Anthropic message role"):
+        with pytest.raises(ValueError, match="requires tool_call_id"):
             await anext(provider.stream_chat([Message("tool", "result")]))
 
     asyncio.run(scenario())
+
+
+def test_anthropic_tool_use_executes_and_continues_stream(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_httpx = _FakeHTTPX(
+        [
+            (
+                'data: {"type":"content_block_start","index":0,'
+                '"content_block":{"type":"tool_use","id":"tool-1",'
+                '"name":"get_volume","input":{}}}'
+            ),
+            (
+                'data: {"type":"content_block_delta","index":0,'
+                '"delta":{"type":"input_json_delta","partial_json":"{}"}}'
+            ),
+            'data: {"type":"content_block_stop","index":0}',
+            (
+                'data: {"type":"message_delta",'
+                '"delta":{"stop_reason":"tool_use"}}'
+            ),
+            'data: {"type":"message_stop"}',
+        ]
+    )
+    monkeypatch.setattr(anthropic_module, "_httpx", lambda: fake_httpx)
+    provider = AnthropicLLM(
+        api_key="secret",
+        model="claude-model",
+        max_tokens=256,
+    )
+    definition = ToolDefinition(
+        "get_volume",
+        "Get speaker volume.",
+        {"type": "object", "properties": {}},
+    )
+    observed: list[ToolCall] = []
+
+    async def execute(call: ToolCall) -> str:
+        observed.append(call)
+        fake_httpx.lines = [
+            (
+                'data: {"type":"content_block_delta","index":0,'
+                '"delta":{"type":"text_delta",'
+                '"text":"The volume is 70%."}}'
+            ),
+            (
+                'data: {"type":"message_delta",'
+                '"delta":{"stop_reason":"end_turn"}}'
+            ),
+            'data: {"type":"message_stop"}',
+        ]
+        return '{"ok":true,"volume_percent":70}'
+
+    async def scenario() -> None:
+        result = "".join([
+            chunk.text
+            async for chunk in provider.stream_chat(
+                [Message("user", "What is the volume?")],
+                tools=[definition],
+                tool_executor=execute,
+            )
+        ])
+
+        assert result == "The volume is 70%."
+        assert observed == [ToolCall("tool-1", "get_volume", {})]
+        await provider.aclose()
+
+    asyncio.run(scenario())
+
+    assert len(fake_httpx.requests) == 2
+    assert fake_httpx.requests[0]["json"]["tools"] == [
+        {
+            "name": "get_volume",
+            "description": "Get speaker volume.",
+            "input_schema": definition.parameters,
+        }
+    ]
+    follow_up = fake_httpx.requests[1]["json"]["messages"]
+    assert follow_up[-2]["content"] == [
+        {
+            "type": "tool_use",
+            "id": "tool-1",
+            "name": "get_volume",
+            "input": {},
+        }
+    ]
+    assert follow_up[-1]["content"] == [
+        {
+            "type": "tool_result",
+            "tool_use_id": "tool-1",
+            "content": '{"ok":true,"volume_percent":70}',
+        }
+    ]

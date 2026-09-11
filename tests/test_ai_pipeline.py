@@ -8,6 +8,8 @@ import pytest
 from lafvin_hat.ai import (
     AudioResult,
     FakeAIProvider,
+    FakeTTSProvider,
+    LLMChunk,
     Message,
     PipelineStageError,
     SentenceSplitter,
@@ -41,12 +43,24 @@ def test_sentence_splitter_keeps_list_numbers_decimals_and_urls_together(
 
     assert splitter.feed("1. First item. Version 2.0 works.") == [
         "1. First item.",
-        "Version 2.0 works.",
     ]
     assert splitter.feed(" See https://example.com/docs.") == [
-        "See https://example.com/docs."
+        "Version 2.0 works.",
     ]
-    assert splitter.flush() is None
+    assert splitter.flush() == "See https://example.com/docs."
+
+
+def test_sentence_splitter_defers_stream_trailing_periods_in_numbers() -> None:
+    splitter = SentenceSplitter()
+
+    assert splitter.feed("Model Rev 1.") == []
+    assert splitter.feed("0 uses IP 192.") == []
+    assert splitter.feed("168.3.") == []
+    assert splitter.feed("2. CPU usage is 13.") == [
+        "Model Rev 1.0 uses IP 192.168.3.2.",
+    ]
+    assert splitter.feed("3 percent.") == []
+    assert splitter.flush() == "CPU usage is 13.3 percent."
 
 
 def test_sentence_splitter_reports_absolute_display_offsets() -> None:
@@ -76,6 +90,18 @@ def test_prepare_text_for_speech_removes_markdown_and_urls() -> None:
 
 def test_prepare_text_for_speech_skips_symbol_only_text() -> None:
     assert prepare_text_for_speech("**\n***\n👍") == ""
+
+
+def test_prepare_text_for_speech_pronounces_numeric_periods() -> None:
+    assert prepare_text_for_speech(
+        "IP 192.168.3.2. Rev 1.0, CPU 13.3 percent."
+    ) == (
+        "IP 192 dot 168 dot 3 dot 2. Rev 1 point 0, "
+        "CPU 13 point 3 percent."
+    )
+    assert prepare_text_for_speech("地址 192.168.3.2，温度 47.2。") == (
+        "地址 192点168点3点2，温度 47点2。"
+    )
 
 
 def test_fake_record_llm_tts_playback_flow(tmp_path: Path) -> None:
@@ -117,6 +143,111 @@ def test_fake_record_llm_tts_playback_flow(tmp_path: Path) -> None:
         with wave.open(str(played[0]), "rb") as audio:
             samples = audio.readframes(audio.getnframes())
         assert any(samples)
+
+    asyncio.run(scenario())
+
+
+def test_pipeline_keeps_first_sentence_fast_and_combines_later_sentences(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        response = "First response. Second short. Third short. Final sentence."
+        provider = FakeAIProvider(response=response, chunk_size=3)
+
+        result = await StreamingSpeechPipeline(provider, provider).run(
+            [Message("user", "hello")],
+            on_text=_ignore_text,
+            play_audio=_ignore_audio,
+            output_directory=tmp_path / "tts-medium-chunks",
+            speech_chunk_target_units=120,
+            speech_chunk_max_sentences=2,
+            speech_chunk_hard_limit_units=180,
+        )
+
+        assert result == response
+        assert provider.synthesized_texts == [
+            "First response.",
+            "Second short. Third short.",
+            "Final sentence.",
+        ]
+
+    asyncio.run(scenario())
+
+
+def test_pi_zero_status_stream_becomes_four_coherent_speech_chunks(
+    tmp_path: Path,
+) -> None:
+    class LoggedChunkLLM:
+        async def stream_chat(self, _messages, **_kwargs):
+            for text in (
+                "Here is the current system status.",
+                " The device is a Raspberry Pi Zero 2 W Rev 1.",
+                "0, with hostname pi2w and IP address 192.",
+                "168.3.",
+                "2. Runtime uptime is about 227 seconds.",
+                " CPU usage is 13.",
+                "3 percent, memory usage is 68.",
+                "6 percent, temperature is 47.",
+                "2 degrees Celsius, and storage usage is 19.",
+                "2 percent. There are 7 installed applications.",
+            ):
+                yield LLMChunk(text)
+
+    async def scenario() -> None:
+        tts = FakeTTSProvider()
+        await StreamingSpeechPipeline(LoggedChunkLLM(), tts).run(
+            [Message("user", "status")],
+            on_text=_ignore_text,
+            play_audio=_ignore_audio,
+            output_directory=tmp_path / "tts-pi-zero-regression",
+            speech_chunk_target_units=120,
+            speech_chunk_max_sentences=2,
+            speech_chunk_hard_limit_units=180,
+        )
+
+        assert len(tts.synthesized_texts) == 4
+        assert tts.synthesized_texts[0] == "Here is the current system status."
+        assert "Rev 1 point 0" in tts.synthesized_texts[1]
+        assert "192 dot 168 dot 3 dot 2" in tts.synthesized_texts[1]
+        assert "13 point 3 percent" in tts.synthesized_texts[2]
+        assert "68 point 6 percent" in tts.synthesized_texts[2]
+        assert "47 point 2 degrees" in tts.synthesized_texts[2]
+        assert "19 point 2 percent" in tts.synthesized_texts[2]
+        assert tts.synthesized_texts[3] == (
+            "There are 7 installed applications."
+        )
+
+    asyncio.run(scenario())
+
+
+def test_pipeline_splits_long_speech_chunks_and_keeps_display_offsets(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        response = "First. " + "word " * 45 + "done."
+        provider = FakeAIProvider(response=response, chunk_size=7)
+        starts: list[SpeechSegment] = []
+
+        async def on_start(segment: SpeechSegment) -> None:
+            starts.append(segment)
+
+        await StreamingSpeechPipeline(provider, provider).run(
+            [Message("user", "hello")],
+            on_text=_ignore_text,
+            play_audio=_ignore_audio,
+            output_directory=tmp_path / "tts-bounded-chunks",
+            on_playback_start=on_start,
+            speech_chunk_target_units=40,
+            speech_chunk_max_sentences=2,
+            speech_chunk_hard_limit_units=50,
+        )
+
+        assert provider.synthesized_texts[0] == "First."
+        assert all(len(text) <= 50 for text in provider.synthesized_texts)
+        assert [segment.display_end for segment in starts] == sorted(
+            segment.display_end for segment in starts
+        )
+        assert starts[-1].display_end == len(response)
 
     asyncio.run(scenario())
 
@@ -170,6 +301,36 @@ def test_pipeline_reports_ordered_speech_segments_with_duration(
             True,
             True,
         ]
+
+    asyncio.run(scenario())
+
+
+def test_runtime_playback_starts_before_slow_display_observer(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        provider = FakeAIProvider(response="Playback starts.")
+        playback_started = asyncio.Event()
+        observer_saw_playback = False
+
+        async def play_audio(_path: Path) -> None:
+            playback_started.set()
+            await asyncio.sleep(0.01)
+
+        async def on_start(_segment: SpeechSegment) -> None:
+            nonlocal observer_saw_playback
+            await asyncio.wait_for(playback_started.wait(), timeout=0.5)
+            observer_saw_playback = True
+
+        await StreamingSpeechPipeline(provider, provider).run(
+            [Message("user", "hello")],
+            on_text=_ignore_text,
+            play_audio=play_audio,
+            output_directory=tmp_path / "tts-nonblocking-observer",
+            on_playback_start=on_start,
+        )
+
+        assert observer_saw_playback is True
 
     asyncio.run(scenario())
 

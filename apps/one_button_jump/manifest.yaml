@@ -1,8 +1,8 @@
 schema_version: 1
 id: dev.lafvin.jump
-name: One Button Jump
-version: 0.2.0
-description: Single-button endless runner with randomized obstacles and progressive speed
+name: Dino Runner
+version: 0.3.1
+description: Toolkit-rendered pixel dinosaur runner with immediate single-button jumping
 
 entrypoint:
   executable: python

@@ -21,6 +21,7 @@ from .config import (
 )
 from .cloud_tts import CloudTTSConfig, FishAudioTTS, MiniMaxTTS
 from .diagnostics import configure_ai_logging
+from .device_tools import DEVICE_TOOL_STATUS, DeviceToolSet
 from .fake import (
     FakeAIProvider,
     FakeASRProvider,
@@ -28,7 +29,14 @@ from .fake import (
     FakeTTSProvider,
 )
 from .fish_audio import FishAudioASR, FishAudioASRConfig
-from .models import AudioResult, LLMChunk, Message, SpeechSegment
+from .models import (
+    AudioResult,
+    LLMChunk,
+    Message,
+    SpeechSegment,
+    ToolCall,
+    ToolDefinition,
+)
 from .openai_compatible import (
     OpenAICompatibleASR,
     OpenAICompatibleConfig,
@@ -39,11 +47,18 @@ from .openai_compatible import (
 from .pipeline import (
     PipelineStageError,
     SentenceSplitter,
+    SpeechChunker,
     StreamingSpeechPipeline,
     TTSQueue,
     prepare_text_for_speech,
 )
-from .providers import ASRProvider, LLMProvider, TTSProvider, aclose_provider
+from .providers import (
+    ASRProvider,
+    LLMProvider,
+    TTSProvider,
+    ToolExecutor,
+    aclose_provider,
+)
 from .registry import AIProviderRegistry
 
 __all__ = [
@@ -57,6 +72,8 @@ __all__ = [
     "AudioNormalizationError",
     "AudioResult",
     "CloudTTSConfig",
+    "DEVICE_TOOL_STATUS",
+    "DeviceToolSet",
     "FakeAIProvider",
     "FakeASRProvider",
     "FakeLLMProvider",
@@ -78,9 +95,13 @@ __all__ = [
     "PipelineStageError",
     "PCMFormat",
     "SentenceSplitter",
+    "SpeechChunker",
     "SpeechSegment",
     "StreamingSpeechPipeline",
     "TTSProvider",
+    "ToolCall",
+    "ToolDefinition",
+    "ToolExecutor",
     "TTS_OUTPUT_FORMAT",
     "TTSQueue",
     "configure_ai_logging",

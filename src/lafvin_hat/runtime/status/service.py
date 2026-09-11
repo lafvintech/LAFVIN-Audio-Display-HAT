@@ -69,6 +69,7 @@ class SystemStatusService:
         self._backend = backend
         self._runtime_version = runtime_version
         self._uptime_ms_provider = uptime_ms_provider or (lambda: 0)
+        self._last_cpu_times = _read_cpu_times()
 
     async def snapshot(self, *, uptime_ms: int | None = None) -> dict[str, Any]:
         if uptime_ms is None:
@@ -114,7 +115,21 @@ class SystemStatusService:
                 "running_count": len(running),
                 "foreground_app_id": self._app_manager.foreground_app_id,
             },
+            "resources": self._resource_state(),
             "storage": _storage_state(self._app_manager.data_dir),
+        }
+
+    def _resource_state(self) -> dict[str, Any]:
+        current_cpu_times = _read_cpu_times()
+        cpu_percent = _cpu_usage_percent(
+            self._last_cpu_times,
+            current_cpu_times,
+        )
+        if current_cpu_times is not None:
+            self._last_cpu_times = current_cpu_times
+        return {
+            "cpu": {"usage_percent": cpu_percent},
+            "memory": _memory_state(),
         }
 
 
@@ -243,9 +258,83 @@ def _storage_state(data_dir: Path) -> dict[str, Any]:
             "data_dir": str(data_dir),
             "used_bytes": None,
             "total_bytes": None,
+            "usage_percent": None,
         }
     return {
         "data_dir": str(data_dir),
         "used_bytes": usage.used,
         "total_bytes": usage.total,
+        "usage_percent": _usage_percent(usage.used, usage.total),
     }
+
+
+def _read_cpu_times(path: Path = Path("/proc/stat")) -> tuple[int, int] | None:
+    """Return Linux CPU idle and total counters from ``/proc/stat``."""
+
+    try:
+        first_line = path.read_text(encoding="utf-8").splitlines()[0]
+        name, *raw_values = first_line.split()
+        if name != "cpu" or len(raw_values) < 4:
+            return None
+        values = [int(value) for value in raw_values[:8]]
+    except (OSError, ValueError, IndexError):
+        return None
+    idle = values[3] + (values[4] if len(values) > 4 else 0)
+    return idle, sum(values)
+
+
+def _cpu_usage_percent(
+    previous: tuple[int, int] | None,
+    current: tuple[int, int] | None,
+) -> float | None:
+    if previous is None or current is None:
+        return None
+    idle_delta = current[0] - previous[0]
+    total_delta = current[1] - previous[1]
+    if idle_delta < 0 or total_delta <= 0:
+        return None
+    busy_delta = max(0, total_delta - idle_delta)
+    return round(min(100.0, busy_delta * 100 / total_delta), 1)
+
+
+def _memory_state(
+    path: Path = Path("/proc/meminfo"),
+) -> dict[str, int | float | None]:
+    """Return Linux system-memory usage using the available-memory estimate."""
+
+    try:
+        values: dict[str, int] = {}
+        for line in path.read_text(encoding="utf-8").splitlines():
+            name, separator, raw_value = line.partition(":")
+            if not separator:
+                continue
+            parts = raw_value.strip().split()
+            if parts:
+                values[name] = int(parts[0]) * 1024
+        total = values["MemTotal"]
+        available = values.get("MemAvailable")
+        if available is None:
+            available = sum(
+                values.get(name, 0)
+                for name in ("MemFree", "Buffers", "Cached")
+            )
+        if total <= 0:
+            raise ValueError("MemTotal must be positive")
+    except (OSError, ValueError, KeyError):
+        return {
+            "used_bytes": None,
+            "total_bytes": None,
+            "usage_percent": None,
+        }
+    used = min(total, max(0, total - available))
+    return {
+        "used_bytes": used,
+        "total_bytes": total,
+        "usage_percent": _usage_percent(used, total),
+    }
+
+
+def _usage_percent(used: int, total: int) -> float | None:
+    if total <= 0:
+        return None
+    return round(min(100.0, max(0.0, used * 100 / total)), 1)

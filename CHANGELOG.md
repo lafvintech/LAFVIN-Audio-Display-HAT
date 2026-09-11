@@ -3,6 +3,67 @@
 All notable public-release changes are recorded here. App manifest versions
 remain independent from the Runtime package version.
 
+## Unreleased
+
+### Added
+
+- AI Chatbot adds native LLM Tool Calling for four allowlisted device actions:
+  reading selected system status, reading or setting speaker volume, and
+  setting the RGB light. OpenAI-compatible and Anthropic message formats are
+  supported without an MCP service.
+- AI Chatbot now uses six selected Twemoji PNGs for Ready, Listening,
+  Thinking, Speaking, request error, and configuration error states without
+  loading a complete emoji library.
+- Dino Runner replaces the former rectangular One Button Jump presentation
+  with original pixel dinosaur, cactus, cloud, ground, running-animation,
+  score, high-score, Ready, and Game Over visuals.
+- System Status now opens a two-page monitor with CPU, memory, temperature,
+  storage, Runtime, model, IP, installed-App, and hostname information.
+- Video Player now discovers multiple supported files from `assets/videos/`
+  and provides a filename-based selection screen.
+- The Web Simulator now provides explicit single-click, double-click, and
+  triple-click shortcuts alongside its raw press-and-hold button.
+
+### Changed
+
+- AI Chatbot device writes remain Runtime-owned; RGB control now carries the
+  App session and requires the foreground `led` permission. Device tools can be
+  disabled with `LAFVIN_CHATBOT_TOOLS_ENABLED=0`, and the App reports version
+  `0.3.1`.
+- AI Chatbot keeps streaming its first complete sentence quickly, combines
+  later short sentences into bounded medium TTS chunks, and starts Runtime
+  playback without waiting for long-text display layout.
+- AI Chatbot removes its fixed title and divider, places status text at the
+  upper left and a consistent state image at the top center, caches its image
+  assets.
+- The stable `dev.lafvin.jump` App is now named Dino Runner, uses a reusable
+  Toolkit Canvas while retaining immediate raw-press jumping, retries on a
+  Game Over single-click, uses a taller and longer jump arc, and reports App
+  version `0.3.1`.
+- Toolkit Canvas presentation can forward an input timestamp so animated Apps
+  retain Runtime frame-latency metrics without bypassing Toolkit presentation.
+- System Status opens on System Monitor, switches pages on single-click, uses
+  a purple storage accent and black Device Info labels, and returns Home on
+  triple-click. Its App version is `0.2.1`.
+- Video Player selects the next file on single-click and starts it on
+  double-click. During playback, single-click returns to selection,
+  double-click is ignored, triple-click returns Home, and natural completion
+  loops the selected video. Its App version is `0.2.2`.
+- The Web Simulator now renders Runtime pages and every App through one native
+  240x280 RGB565 Canvas, checks animated frames at up to 30 FPS, and uses a
+  smooth device-pixel-ratio-aware HiDPI backing store.
+
+### Fixed
+
+- Streaming speech no longer treats a transport chunk ending in an ASCII
+  period as a complete sentence before numeric look-ahead arrives. IPv4
+  addresses, decimals, and versions remain intact and receive explicit
+  speech-only `dot` / `point` pronunciation.
+- Video Player resolves the shared `assets/videos/` directory from development
+  checkouts, configured project roots, and conventional deployment locations.
+- The simulator Canvas content area now matches the hardware's full 240x280
+  display instead of using an inset size.
+
 ## 0.3.0b3 - 2026-08-25
 
 Third public beta with expanded Raspberry Pi compatibility and deployment
@@ -27,6 +88,10 @@ refinements.
   Provider-specific environment variables, allowing every Provider's settings
   to coexist without overriding the selected service.
 - Voice Translator manifest version is now `0.1.1`.
+- System Status now labels the temperature card `TEMP °C` and drops the
+  degree suffix from the value itself, so the unit reads next to the label
+  instead of after every reading. System Status manifest version is now
+  `0.2.1`.
 
 ### Removed
 

@@ -6,119 +6,271 @@ import random
 import time
 
 from lafvin_hat.sdk import DeviceApp
+from lafvin_hat.ui import Canvas, Theme
 
 
 WIDTH = 240
 HEIGHT = 280
 FRAME_INTERVAL = 1 / 30
-MENU_CLICK_INTERVAL = 0.450
-JUMP_VELOCITY = -240.0
-GRAVITY = 430.0
-BACKGROUND = 0x0843
-GROUND = 0x5AEB
-PLAYER = 0xFFE0
-OBSTACLE = 0xF986
-WHITE = 0xFFFF
-PANEL = 0x2104
-HIGHLIGHT = 0x3A7F
-MUTED = 0x8C71
-OBSTACLE_WIDTH = 18
+
+STATE_READY = "ready"
+STATE_RUNNING = "running"
+STATE_GAME_OVER = "game_over"
+
+GROUND_Y = 220
+DINO_X = 28
+SPRITE_SCALE = 2
+JUMP_VELOCITY = -300.0
+GRAVITY = 520.0
+GAME_OVER_RETRY_DELAY = 0.35
+RUN_FRAME_INTERVAL = 0.12
+CLOUD_SCALE = 2
+
 OBSTACLE_SPAWN_OFFSET_MIN = 0
 OBSTACLE_SPAWN_OFFSET_MAX = 20
-OBSTACLE_SPACING_MIN = 160
-OBSTACLE_SPACING_MAX = 260
-BASE_OBSTACLE_SPEED = 85.0
+OBSTACLE_SPACING_MIN = 155
+OBSTACLE_SPACING_MAX = 235
+BASE_OBSTACLE_SPEED = 88.0
 SPEEDUP_SCORE_30_PERCENT = 15
 SPEEDUP_SCORE_50_PERCENT = 30
-HUD_SCORE_X = 20
-GAME_OVER_SCORE_Y = 113
-GAME_OVER_SCORE_SCALE = 3
-GAME_OVER_OPTIONS = (("CONTINUE", 140), ("EXIT", 168))
+
+DINO_THEME = Theme(
+    background=(247, 247, 247),
+    text=(45, 45, 45),
+    muted=(112, 112, 112),
+    line=(69, 69, 69),
+    accent=(45, 45, 45),
+    danger=(178, 54, 54),
+)
+
+DINO_RUN_A = (
+    "            ######",
+    "           ########",
+    "           ##  ####",
+    "           ########",
+    "           ####    ",
+    "           ######  ",
+    "#         ####     ",
+    "##       #######   ",
+    "###     #########  ",
+    "####   ########    ",
+    "###############    ",
+    " #############     ",
+    "  ###########      ",
+    "    #######        ",
+    "    ###  ##        ",
+    "    ##   ##        ",
+    "    ###            ",
+    "         ###       ",
+)
+
+DINO_RUN_B = (
+    "            ######",
+    "           ########",
+    "           ##  ####",
+    "           ########",
+    "           ####    ",
+    "           ######  ",
+    "#         ####     ",
+    "##       #######   ",
+    "###     #########  ",
+    "####   ########    ",
+    "###############    ",
+    " #############     ",
+    "  ###########      ",
+    "    #######        ",
+    "    ###  ##        ",
+    "    ##   ###       ",
+    "    ###            ",
+    "    ##             ",
+)
+
+DINO_JUMP = (
+    "            ######",
+    "           ########",
+    "           ##  ####",
+    "           ########",
+    "           ####    ",
+    "           ######  ",
+    "#         ####     ",
+    "##       #######   ",
+    "###     #########  ",
+    "####   ########    ",
+    "###############    ",
+    " #############     ",
+    "  ###########      ",
+    "    #######        ",
+    "    ### ###        ",
+    "    ##   ##        ",
+    "     ##  ##        ",
+    "      ####         ",
+)
+
+CACTUS_SMALL = (
+    "   ##  ",
+    "   ##  ",
+    "#  ##  ",
+    "#  ## #",
+    "## ## #",
+    " ##### ",
+    "   ##  ",
+    "   ##  ",
+    "   ##  ",
+    "   ##  ",
+    "   ##  ",
+    "   ##  ",
+    "   ##  ",
+    "  #### ",
+)
+
+CACTUS_TALL = (
+    "   ##   ",
+    "   ##   ",
+    "   ##   ",
+    "#  ##   ",
+    "#  ##  #",
+    "## ##  #",
+    " ##### ##",
+    "   ##### ",
+    "   ##    ",
+    "   ##    ",
+    "   ##    ",
+    "   ##    ",
+    "   ##    ",
+    "   ##    ",
+    "   ##    ",
+    "   ##    ",
+    "   ##    ",
+    "  ####   ",
+)
+
+CACTUS_PAIR = (
+    "  ##       ## ",
+    "  ##       ## ",
+    "  ##  #    ## ",
+    "# ##  #  # ## ",
+    "# ##  ## # ## ",
+    "####   ####### ",
+    "  ##       ##  ",
+    "  ##       ##  ",
+    "  ##       ##  ",
+    "  ##       ##  ",
+    "  ##       ##  ",
+    "  ##       ##  ",
+    "  ##       ##  ",
+    " ####     #### ",
+)
+
+CACTUS_SPRITES = (CACTUS_SMALL, CACTUS_TALL, CACTUS_PAIR)
+
+CLOUD_SPRITE = (
+    "       ####       ",
+    "    ###    ###    ",
+    "  ##          ##  ",
+    "##              ##",
+    "##################",
+)
+
+DINO_WIDTH = max(len(row) for row in DINO_RUN_A) * SPRITE_SCALE
+DINO_HEIGHT = len(DINO_RUN_A) * SPRITE_SCALE
+DINO_REST_Y = float(GROUND_Y - DINO_HEIGHT)
+
+
+class Obstacle:
+    __slots__ = ("scored", "variant", "x")
+
+    def __init__(self, x: float, variant: int, scored: bool = False) -> None:
+        self.x = x
+        self.variant = variant
+        self.scored = scored
+
+    @property
+    def sprite(self) -> tuple[str, ...]:
+        return CACTUS_SPRITES[self.variant]
+
+    @property
+    def width(self) -> int:
+        return max(len(row) for row in self.sprite) * SPRITE_SCALE
+
+    @property
+    def height(self) -> int:
+        return len(self.sprite) * SPRITE_SCALE
 
 
 class Game:
     def __init__(self, rng: random.Random | None = None) -> None:
         self._rng = rng or random.Random()
-        self.player_y = 220.0
-        self.velocity = 0.0
-        self.obstacles = [self._next_obstacle_x()]
-        self._distance_until_next_obstacle = self._next_obstacle_spacing()
-        self.score = 0
-        self.game_over = False
-        self.jump_requested = False
-        self.menu_selected = 0
-        self._menu_pending_release_at: float | None = None
+        self.high_score = 0
+        self._reset_round(STATE_READY)
+
+    @property
+    def game_over(self) -> bool:
+        return self.state == STATE_GAME_OVER
+
+    @property
+    def grounded(self) -> bool:
+        return self.player_y >= DINO_REST_Y - 0.01
 
     def press(self) -> None:
-        if not self.game_over and self.player_y >= 219:
+        if self.state == STATE_READY:
+            self.state = STATE_RUNNING
+            self.state_elapsed = 0.0
+            self.jump_requested = True
+            return
+        if self.state == STATE_RUNNING and self.grounded:
             self.jump_requested = True
 
-    def release(self, timestamp: float) -> str | None:
-        if not self.game_over:
-            return None
-        self.advance_menu(timestamp)
-        pending = self._menu_pending_release_at
-        if pending is not None and timestamp - pending <= MENU_CLICK_INTERVAL:
-            self._menu_pending_release_at = None
-            return "continue" if self.menu_selected == 0 else "exit"
-        self._menu_pending_release_at = timestamp
-        return None
+    def retry(self) -> bool:
+        if (
+            self.state != STATE_GAME_OVER
+            or self.state_elapsed < GAME_OVER_RETRY_DELAY
+        ):
+            return False
+        self._reset_round(STATE_RUNNING)
+        return True
 
     def update(self, elapsed: float) -> None:
-        if self.game_over:
+        elapsed = max(0.0, float(elapsed))
+        self.state_elapsed += elapsed
+        if self.state != STATE_RUNNING:
             return
+
         if self.jump_requested:
             self.velocity = JUMP_VELOCITY
             self.jump_requested = False
         self.velocity += GRAVITY * elapsed
-        self.player_y = min(220.0, self.player_y + self.velocity * elapsed)
-        if self.player_y >= 220:
-            self.velocity = 0.0
-        travelled = self.obstacle_speed() * elapsed
-        self.obstacles = [position - travelled for position in self.obstacles]
-        passed = sum(
-            position < -OBSTACLE_WIDTH for position in self.obstacles
+        self.player_y = min(
+            DINO_REST_Y,
+            self.player_y + self.velocity * elapsed,
         )
-        if passed:
-            self.score += passed
-            self.obstacles = [
-                position
-                for position in self.obstacles
-                if position >= -OBSTACLE_WIDTH
-            ]
+        if self.grounded and self.velocity > 0:
+            self.velocity = 0.0
+
+        travelled = self.obstacle_speed() * elapsed
+        self.world_distance += travelled
+        for obstacle in self.obstacles:
+            obstacle.x -= travelled
+            if (
+                not obstacle.scored
+                and obstacle.x + obstacle.width < DINO_X + 4
+            ):
+                obstacle.scored = True
+                self.score += 1
+        self.obstacles = [
+            obstacle
+            for obstacle in self.obstacles
+            if obstacle.x + obstacle.width >= 0
+        ]
 
         self._distance_until_next_obstacle -= travelled
         while self._distance_until_next_obstacle <= 0:
-            self.obstacles.append(self._next_obstacle_x())
+            self.obstacles.append(self._new_obstacle())
             self._distance_until_next_obstacle += self._next_obstacle_spacing()
 
-        if self.player_y + 20 > 220 and any(
-            position < 55 and position + OBSTACLE_WIDTH > 30
-            for position in self.obstacles
-        ):
-            self.game_over = True
-
-    def advance_menu(self, timestamp: float) -> None:
-        pending = self._menu_pending_release_at
-        if (
-            self.game_over
-            and pending is not None
-            and timestamp - pending >= MENU_CLICK_INTERVAL
-        ):
-            self.menu_selected = 1 - self.menu_selected
-            self._menu_pending_release_at = None
-
-    def _next_obstacle_x(self) -> float:
-        offset = self._rng.randint(
-            OBSTACLE_SPAWN_OFFSET_MIN,
-            OBSTACLE_SPAWN_OFFSET_MAX,
-        )
-        return float(WIDTH + offset)
-
-    def _next_obstacle_spacing(self) -> float:
-        return float(
-            self._rng.randint(OBSTACLE_SPACING_MIN, OBSTACLE_SPACING_MAX)
-        )
+        if self._collides():
+            self.state = STATE_GAME_OVER
+            self.state_elapsed = 0.0
+            self.high_score = max(self.high_score, self.score)
 
     def obstacle_speed(self) -> float:
         if self.score >= SPEEDUP_SCORE_50_PERCENT:
@@ -127,154 +279,263 @@ class Game:
             return BASE_OBSTACLE_SPEED * 1.3
         return BASE_OBSTACLE_SPEED
 
+    def _reset_round(self, state: str) -> None:
+        self.state = state
+        self.state_elapsed = 0.0
+        self.player_y = DINO_REST_Y
+        self.velocity = 0.0
+        self.jump_requested = False
+        self.world_distance = 0.0
+        self.score = 0
+        self.obstacles = [self._new_obstacle()]
+        self._distance_until_next_obstacle = self._next_obstacle_spacing()
 
-def rgb565_frame(game: Game) -> bytes:
-    pixels = bytearray(_color_bytes(BACKGROUND) * (WIDTH * HEIGHT))
-    _rect(pixels, 0, 240, WIDTH, 40, GROUND)
-    _rect(pixels, 30, int(game.player_y), 25, 20, PLAYER)
-    for obstacle_x in game.obstacles:
-        _rect(
-            pixels,
-            int(obstacle_x),
-            210,
-            OBSTACLE_WIDTH,
-            30,
-            OBSTACLE,
+    def _new_obstacle(self) -> Obstacle:
+        return Obstacle(
+            x=float(
+                WIDTH
+                + self._rng.randint(
+                    OBSTACLE_SPAWN_OFFSET_MIN,
+                    OBSTACLE_SPAWN_OFFSET_MAX,
+                )
+            ),
+            variant=self._rng.randrange(len(CACTUS_SPRITES)),
         )
-    _number(pixels, HUD_SCORE_X, 8, game.score, WHITE)
-    if game.game_over:
-        _game_over_menu(pixels, game)
-    return bytes(pixels)
+
+    def _next_obstacle_spacing(self) -> float:
+        return float(
+            self._rng.randint(OBSTACLE_SPACING_MIN, OBSTACLE_SPACING_MAX)
+        )
+
+    def _collides(self) -> bool:
+        dino_left = DINO_X + 6
+        dino_top = int(self.player_y) + 4
+        dino_right = DINO_X + DINO_WIDTH - 5
+        dino_bottom = int(self.player_y) + DINO_HEIGHT - 2
+        for obstacle in self.obstacles:
+            obstacle_left = int(obstacle.x) + 2
+            obstacle_top = GROUND_Y - obstacle.height + 2
+            obstacle_right = int(obstacle.x) + obstacle.width - 2
+            obstacle_bottom = GROUND_Y
+            if (
+                dino_left < obstacle_right
+                and dino_right > obstacle_left
+                and dino_top < obstacle_bottom
+                and dino_bottom > obstacle_top
+            ):
+                return True
+        return False
 
 
-def _game_over_menu(pixels: bytearray, game: Game) -> None:
-    _rect(pixels, 24, 72, 192, 132, PANEL)
-    _text(pixels, 55, 88, "GAME OVER", WHITE, scale=3)
-    _text(pixels, 55, 116, "SCORE", MUTED, scale=2)
-    _number(
-        pixels,
-        125,
-        GAME_OVER_SCORE_Y,
-        game.score,
-        WHITE,
-        scale=GAME_OVER_SCORE_SCALE,
+def handle_event(game: Game, event_name: str) -> str | None:
+    if event_name == "app.exit_requested":
+        return "exit"
+    if event_name == "button.raw_pressed":
+        game.press()
+    elif event_name == "button.single_clicked" and game.game_over:
+        game.retry()
+    return None
+
+
+def render_game(canvas: Canvas, game: Game) -> Canvas:
+    canvas.clear()
+    _draw_clouds(canvas, game.world_distance)
+    _draw_ground(canvas, game.world_distance)
+    for obstacle in game.obstacles:
+        _draw_pixel_sprite(
+            canvas,
+            obstacle.sprite,
+            x=int(obstacle.x),
+            y=GROUND_Y - obstacle.height,
+            scale=SPRITE_SCALE,
+            fill=canvas.theme.text,
+        )
+
+    dino_sprite = _active_dino_sprite(game)
+    _draw_pixel_sprite(
+        canvas,
+        dino_sprite,
+        x=DINO_X,
+        y=int(game.player_y),
+        scale=SPRITE_SCALE,
+        fill=canvas.theme.text,
     )
-    for index, (label, y) in enumerate(GAME_OVER_OPTIONS):
-        if index == game.menu_selected:
-            _rect(pixels, 45, y - 5, 150, 23, HIGHLIGHT)
-            color = WHITE
-        else:
-            color = MUTED
-        _text(pixels, 63, y, label, color, scale=2)
+    if game.game_over:
+        canvas.draw.line(
+            (DINO_X + 29, int(game.player_y) + 5, DINO_X + 35, int(game.player_y) + 11),
+            fill=canvas.theme.danger,
+            width=2,
+        )
+        canvas.draw.line(
+            (DINO_X + 35, int(game.player_y) + 5, DINO_X + 29, int(game.player_y) + 11),
+            fill=canvas.theme.danger,
+            width=2,
+        )
+
+    _draw_hud(canvas, game)
+    if game.state == STATE_READY:
+        canvas.draw.rectangle(
+            (28, 76, canvas.width - 28, 135),
+            fill=canvas.theme.background,
+        )
+        canvas.center_text("PRESS TO START", y=94, font=canvas.body_font)
+        canvas.center_text(
+            "3 CLICKS: HOME",
+            y=122,
+            fill=canvas.theme.muted,
+            font=canvas.small_font,
+        )
+    elif game.state == STATE_GAME_OVER:
+        canvas.draw.rectangle(
+            (22, 54, canvas.width - 22, 176),
+            fill=canvas.theme.background,
+        )
+        canvas.center_text("GAME OVER", y=78, size="large")
+        canvas.center_text(
+            f"SCORE {game.score:05d}",
+            y=110,
+            font=canvas.body_font,
+        )
+        canvas.center_text(
+            "SINGLE: RETRY",
+            y=140,
+            fill=canvas.theme.muted,
+            font=canvas.small_font,
+        )
+        canvas.center_text(
+            "3 CLICKS: HOME",
+            y=160,
+            fill=canvas.theme.muted,
+            font=canvas.small_font,
+        )
+    return canvas
 
 
-def _rect(
-    pixels: bytearray,
-    x: int,
-    y: int,
-    width: int,
-    height: int,
-    color: int,
-) -> None:
-    left = max(0, x)
-    top = max(0, y)
-    right = min(WIDTH, x + width)
-    bottom = min(HEIGHT, y + height)
-    row_data = _color_bytes(color) * (right - left)
-    for row in range(top, bottom):
-        start = (row * WIDTH + left) * 2
-        pixels[start:start + len(row_data)] = row_data
+def rgb565_frame(game: Game, canvas: Canvas | None = None) -> bytes:
+    active_canvas = canvas or Canvas(width=WIDTH, height=HEIGHT, theme=DINO_THEME)
+    return render_game(active_canvas, game).render()
 
 
-def _number(
-    pixels: bytearray,
-    x: int,
-    y: int,
-    value: int,
-    color: int,
-    *,
-    scale: int = 3,
-) -> None:
-    _text(pixels, x, y, str(value), color, scale=scale)
+def _draw_hud(canvas: Canvas, game: Game) -> None:
+    canvas.draw.text(
+        (10, 8),
+        "DINO RUN",
+        fill=canvas.theme.text,
+        font=canvas.small_font,
+    )
+    _draw_right_text(
+        canvas,
+        f"{game.score:05d}",
+        x=canvas.width - 10,
+        y=8,
+        fill=canvas.theme.text,
+    )
+    _draw_right_text(
+        canvas,
+        f"HI {game.high_score:05d}",
+        x=canvas.width - 10,
+        y=28,
+        fill=canvas.theme.muted,
+    )
 
 
-def _text(
-    pixels: bytearray,
-    x: int,
-    y: int,
+def _draw_right_text(
+    canvas: Canvas,
     text: str,
-    color: int,
     *,
-    scale: int = 3,
+    x: int,
+    y: int,
+    fill: tuple[int, int, int],
 ) -> None:
-    cursor = x
-    for char in text.upper():
-        if char == " ":
-            cursor += 2 * scale
-            continue
-        glyph = _GLYPHS.get(char)
-        if glyph is None:
-            cursor += 4 * scale
-            continue
-        for row, line in enumerate(glyph):
-            for column, bit in enumerate(line):
-                if bit == "1":
-                    _rect(
-                        pixels,
-                        cursor + column * scale,
-                        y + row * scale,
-                        scale,
-                        scale,
-                        color,
-                    )
-        cursor += (len(glyph[0]) + 1) * scale
+    bounds = canvas.draw.textbbox((0, 0), text, font=canvas.small_font)
+    canvas.draw.text(
+        (x - (bounds[2] - bounds[0]), y),
+        text,
+        fill=fill,
+        font=canvas.small_font,
+    )
 
 
-_GLYPHS = {
-    "0": ("111", "101", "101", "101", "111"),
-    "1": ("010", "110", "010", "010", "111"),
-    "2": ("111", "001", "111", "100", "111"),
-    "3": ("111", "001", "111", "001", "111"),
-    "4": ("101", "101", "111", "001", "001"),
-    "5": ("111", "100", "111", "001", "111"),
-    "6": ("111", "100", "111", "101", "111"),
-    "7": ("111", "001", "010", "010", "010"),
-    "8": ("111", "101", "111", "101", "111"),
-    "9": ("111", "101", "111", "001", "111"),
-    "A": ("010", "101", "111", "101", "101"),
-    "C": ("111", "100", "100", "100", "111"),
-    "E": ("111", "100", "111", "100", "111"),
-    "G": ("111", "100", "101", "101", "111"),
-    "I": ("111", "010", "010", "010", "111"),
-    "M": ("101", "111", "111", "101", "101"),
-    "N": ("101", "111", "111", "111", "101"),
-    "O": ("111", "101", "101", "101", "111"),
-    "R": ("110", "101", "110", "101", "101"),
-    "S": ("111", "100", "111", "001", "111"),
-    "T": ("111", "010", "010", "010", "010"),
-    "U": ("101", "101", "101", "101", "111"),
-    "V": ("101", "101", "101", "101", "010"),
-    "X": ("101", "101", "010", "101", "101"),
-}
+def _draw_clouds(canvas: Canvas, world_distance: float) -> None:
+    wrap_width = canvas.width + 100
+    for start_x, y in ((78, 64), (196, 104), (322, 82)):
+        x = int((start_x - world_distance * 0.18) % wrap_width) - 40
+        _draw_pixel_sprite(
+            canvas,
+            CLOUD_SPRITE,
+            x=x,
+            y=y,
+            scale=CLOUD_SCALE,
+            fill=(198, 198, 198),
+        )
 
 
-def _color_bytes(color: int) -> bytes:
-    return bytes((color >> 8, color & 0xFF))
+def _draw_ground(canvas: Canvas, world_distance: float) -> None:
+    canvas.draw.line(
+        (0, GROUND_Y, canvas.width, GROUND_Y),
+        fill=canvas.theme.line,
+        width=2,
+    )
+    offset = int(world_distance) % 20
+    for x in range(-offset, canvas.width + 20, 20):
+        canvas.draw.line(
+            (x, GROUND_Y + 7, x + 8, GROUND_Y + 7),
+            fill=(160, 160, 160),
+            width=1,
+        )
+
+
+def _active_dino_sprite(game: Game) -> tuple[str, ...]:
+    if not game.grounded:
+        return DINO_JUMP
+    if game.state != STATE_RUNNING:
+        return DINO_RUN_A
+    frame_index = int(game.state_elapsed / RUN_FRAME_INTERVAL) % 2
+    return (DINO_RUN_A, DINO_RUN_B)[frame_index]
+
+
+def _draw_pixel_sprite(
+    canvas: Canvas,
+    sprite: tuple[str, ...],
+    *,
+    x: int,
+    y: int,
+    scale: int,
+    fill: tuple[int, int, int],
+) -> None:
+    for row_index, row in enumerate(sprite):
+        run_start: int | None = None
+        for column, value in enumerate(f"{row} "):
+            if value != " " and run_start is None:
+                run_start = column
+                continue
+            if value == " " and run_start is not None:
+                canvas.draw.rectangle(
+                    (
+                        x + run_start * scale,
+                        y + row_index * scale,
+                        x + column * scale - 1,
+                        y + (row_index + 1) * scale - 1,
+                    ),
+                    fill=fill,
+                )
+                run_start = None
 
 
 async def main() -> None:
     app = await DeviceApp.connect_from_environment()
     await app.acquire_foreground()
     frame = await app.frames.acquire()
+    canvas = Canvas(width=frame.width, height=frame.height, theme=DINO_THEME)
     game = Game()
     events = app.subscribe(
         events=[
             "button.raw_pressed",
-            "button.raw_released",
+            "button.single_clicked",
             "app.exit_requested",
         ]
     )
-    event_task = asyncio.create_task(anext(events))
+    event_task = asyncio.create_task(anext(events), name="dino-runner-events")
     previous = time.monotonic()
     pending_input_timestamp_ms: int | None = None
     try:
@@ -283,23 +544,24 @@ async def main() -> None:
             elapsed = min(now - previous, 0.1)
             previous = now
             if event_task.done():
-                event = event_task.result()
-                if event["event"] == "app.exit_requested":
+                try:
+                    event = event_task.result()
+                except StopAsyncIteration:
                     break
-                if event["event"] == "button.raw_pressed":
-                    game.press()
-                    pending_input_timestamp_ms = event["timestamp_ms"]
-                if event["event"] == "button.raw_released":
-                    action = game.release(time.monotonic())
-                    if action == "continue":
-                        game = Game()
-                    elif action == "exit":
-                        break
-                event_task = asyncio.create_task(anext(events))
+                if handle_event(game, event["event"]) == "exit":
+                    break
+                timestamp_ms = event.get("timestamp_ms")
+                if isinstance(timestamp_ms, int):
+                    pending_input_timestamp_ms = timestamp_ms
+                event_task = asyncio.create_task(
+                    anext(events),
+                    name="dino-runner-events",
+                )
+
             game.update(elapsed)
-            game.advance_menu(now)
-            frame.write(rgb565_frame(game))
-            await frame.commit(
+            render_game(canvas, game)
+            await canvas.present(
+                frame,
                 input_timestamp_ms=pending_input_timestamp_ms,
             )
             pending_input_timestamp_ms = None

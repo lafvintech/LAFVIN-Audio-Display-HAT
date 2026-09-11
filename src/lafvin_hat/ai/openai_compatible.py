@@ -6,16 +6,24 @@ import logging
 import os
 import tempfile
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from .http_client import ReusableHTTPClient
-from .models import AudioResult, LLMChunk, Message
+from .models import (
+    AudioResult,
+    LLMChunk,
+    Message,
+    ToolCall,
+    ToolDefinition,
+)
+from .providers import ToolExecutor
 
 
 logger = logging.getLogger(__name__)
+MAX_TOOL_ROUNDS = 3
 
 
 @dataclass(frozen=True, slots=True)
@@ -136,46 +144,100 @@ class OpenAICompatibleLLM:
     async def stream_chat(
         self,
         messages: list[Message],
+        *,
+        tools: Sequence[ToolDefinition] = (),
+        tool_executor: ToolExecutor | None = None,
     ) -> AsyncIterator[LLMChunk]:
-        payload = {
-            "model": self.model,
-            "stream": True,
-            "messages": [
-                {"role": message.role, "content": message.content}
-                for message in messages
-            ],
-        }
+        conversation = list(messages)
         client = await self._http_client.get()
-        async with client.stream(
-            "POST",
-            f"{self.config.normalized_base_url}/chat/completions",
-            headers={
-                **self.config.headers(),
-                "Content-Type": "application/json",
-            },
-            json=payload,
-        ) as response:
-            response.raise_for_status()
-            async for line in response.aiter_lines():
-                if not line.startswith("data:"):
-                    continue
-                data = line[5:].strip()
-                if data == "[DONE]":
-                    return
-                value = json.loads(data)
-                choice = value.get("choices", [{}])[0]
-                delta = choice.get("delta") or {}
-                text = delta.get("content") or ""
-                finish_reason = choice.get("finish_reason")
-                if text or finish_reason:
-                    yield LLMChunk(
-                        text=str(text),
-                        finish_reason=(
-                            str(finish_reason)
-                            if finish_reason is not None
-                            else None
-                        ),
+        for tool_round in range(MAX_TOOL_ROUNDS + 1):
+            payload: dict[str, Any] = {
+                "model": self.model,
+                "stream": True,
+                "messages": [
+                    _openai_message(message) for message in conversation
+                ],
+            }
+            if tools:
+                payload["tools"] = [_openai_tool(tool) for tool in tools]
+
+            tool_parts: dict[int, dict[str, str]] = {}
+            response_text = ""
+            finish_reason: str | None = None
+            async with client.stream(
+                "POST",
+                f"{self.config.normalized_base_url}/chat/completions",
+                headers={
+                    **self.config.headers(),
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+            ) as response:
+                response.raise_for_status()
+                async for line in response.aiter_lines():
+                    if not line.startswith("data:"):
+                        continue
+                    data = line[5:].strip()
+                    if data == "[DONE]":
+                        break
+                    value = json.loads(data)
+                    choice = value.get("choices", [{}])[0]
+                    delta = choice.get("delta") or {}
+                    text = delta.get("content") or ""
+                    if text:
+                        response_text += str(text)
+                        yield LLMChunk(text=str(text))
+                    _merge_openai_tool_parts(
+                        tool_parts,
+                        delta.get("tool_calls"),
                     )
+                    raw_finish_reason = choice.get("finish_reason")
+                    if raw_finish_reason is not None:
+                        finish_reason = str(raw_finish_reason)
+
+            tool_calls = _openai_tool_calls(tool_parts, tool_round)
+            if not tool_calls:
+                if finish_reason is not None:
+                    yield LLMChunk(text="", finish_reason=finish_reason)
+                return
+            if tool_executor is None:
+                raise RuntimeError(
+                    "The LLM requested a tool but no tool executor is configured"
+                )
+            if tool_round >= MAX_TOOL_ROUNDS:
+                raise RuntimeError(
+                    f"LLM exceeded the {MAX_TOOL_ROUNDS}-round tool-call limit"
+                )
+
+            conversation.append(
+                Message(
+                    "assistant",
+                    response_text,
+                    tool_calls=tuple(tool_calls),
+                )
+            )
+            for call in tool_calls:
+                try:
+                    result = await tool_executor(call)
+                except Exception as exc:
+                    logger.exception(
+                        "stage=llm_tool event=execution_failed tool=%s",
+                        call.name,
+                    )
+                    result = json.dumps(
+                        {
+                            "ok": False,
+                            "error": f"{type(exc).__name__}: {exc}",
+                        },
+                        ensure_ascii=False,
+                    )
+                conversation.append(
+                    Message(
+                        "tool",
+                        result,
+                        tool_call_id=call.call_id,
+                    )
+                )
 
     async def aclose(self) -> None:
         await self._http_client.aclose()
@@ -300,8 +362,15 @@ class OpenAICompatibleProvider:
     def stream_chat(
         self,
         messages: list[Message],
+        *,
+        tools: Sequence[ToolDefinition] = (),
+        tool_executor: ToolExecutor | None = None,
     ) -> AsyncIterator[LLMChunk]:
-        return self.llm.stream_chat(messages)
+        return self.llm.stream_chat(
+            messages,
+            tools=tools,
+            tool_executor=tool_executor,
+        )
 
     async def synthesize(
         self,
@@ -326,6 +395,96 @@ class OpenAICompatibleProvider:
             raise RuntimeError(
                 f"Failed to close OpenAI-compatible provider: {failure}"
             ) from failure
+
+
+def _openai_tool(tool: ToolDefinition) -> dict[str, Any]:
+    return {
+        "type": "function",
+        "function": {
+            "name": tool.name,
+            "description": tool.description,
+            "parameters": tool.parameters,
+        },
+    }
+
+
+def _openai_message(message: Message) -> dict[str, Any]:
+    result: dict[str, Any] = {
+        "role": message.role,
+        "content": message.content,
+    }
+    if message.tool_calls:
+        result["tool_calls"] = [
+            {
+                "id": call.call_id,
+                "type": "function",
+                "function": {
+                    "name": call.name,
+                    "arguments": json.dumps(
+                        call.arguments,
+                        ensure_ascii=False,
+                    ),
+                },
+            }
+            for call in message.tool_calls
+        ]
+    if message.tool_call_id is not None:
+        result["tool_call_id"] = message.tool_call_id
+    return result
+
+
+def _merge_openai_tool_parts(
+    buffers: dict[int, dict[str, str]],
+    raw_parts: Any,
+) -> None:
+    if not isinstance(raw_parts, list):
+        return
+    for raw_part in raw_parts:
+        if not isinstance(raw_part, dict):
+            continue
+        raw_index = raw_part.get("index", 0)
+        index = raw_index if isinstance(raw_index, int) else 0
+        buffer = buffers.setdefault(
+            index,
+            {"id": "", "name": "", "arguments": ""},
+        )
+        call_id = raw_part.get("id")
+        if isinstance(call_id, str):
+            buffer["id"] = call_id
+        function = raw_part.get("function") or {}
+        if not isinstance(function, dict):
+            continue
+        name = function.get("name")
+        arguments = function.get("arguments")
+        if isinstance(name, str):
+            buffer["name"] += name
+        if isinstance(arguments, str):
+            buffer["arguments"] += arguments
+
+
+def _openai_tool_calls(
+    buffers: dict[int, dict[str, str]],
+    tool_round: int,
+) -> list[ToolCall]:
+    calls: list[ToolCall] = []
+    for index, buffer in sorted(buffers.items()):
+        name = buffer["name"].strip()
+        if not name:
+            continue
+        try:
+            arguments = json.loads(buffer["arguments"] or "{}")
+        except json.JSONDecodeError:
+            arguments = {}
+        if not isinstance(arguments, dict):
+            arguments = {}
+        calls.append(
+            ToolCall(
+                call_id=buffer["id"] or f"tool-{tool_round}-{index}",
+                name=name,
+                arguments=arguments,
+            )
+        )
+    return calls
 
 
 def _httpx() -> Any:

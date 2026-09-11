@@ -5,87 +5,257 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>LAFVIN HAT Simulator</title>
   <style>
-    :root { color-scheme: dark; font-family: system-ui, sans-serif; }
-    body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #10141d; }
-    main { display: grid; gap: 20px; grid-template-columns: 260px 280px; align-items: start; }
-    .device, .panel { background: #1a2230; border: 1px solid #344158; border-radius: 18px; padding: 18px; }
-    .screen { position: relative; width: 240px; height: 280px; box-sizing: border-box; border: 4px solid #05070a; border-radius: 8px; background: #080b12; color: #e6ebf2; padding: 10px; overflow: hidden; }
-    .screen.raw { padding: 0; }
-    #raw-frame { display: none; width: 232px; height: 272px; image-rendering: pixelated; }
-    .screen h2 { font-size: 18px; margin: 0 0 6px; }
-    .screen p { font-size: 14px; line-height: 1.35; margin: 6px 0; white-space: pre-wrap; }
-    .status { color: #70a8ff; font-size: 11px; margin-bottom: 8px; text-transform: uppercase; }
-    .primary { color: #70a8ff; } .warning { color: #f4c95d; } .danger { color: #ff7979; }
-    .message, .list-item, .dialog { border-radius: 8px; margin: 6px 0; padding: 7px; background: #151e2c; font-size: 13px; }
-    .screen.home { padding: 0; background: #f5f5f5; color: #000; }
-    .screen.home .home-title { margin: 0; padding: 10px 22px 0; color: #000; font-size: 20px; font-weight: 800; line-height: 32px; }
-    .screen.home .home-divider { border-top: 1px solid #141414; margin: 0 8px; }
-    .screen.home .home-list { padding: 10px 12px 0; }
-    .screen.home .home-list-item { border-radius: 10px; margin: 0 0 7px; padding: 8px; background: #c8c8c8; color: #000; font-size: 13px; line-height: 18px; }
-    .screen.home .home-list-item.selected { background: #5c96ff; color: #fff; }
-    .screen.home .home-list-item small { float: right; color: inherit; opacity: .86; }
-    .system-page { width: 100%; height: 100%; box-sizing: border-box; background: #f7f7f5; color: #05070a; display: flex; flex-direction: column; }
-    .system-page h2 { margin: 0; padding: 10px 22px 0; color: #05070a; font-size: 20px; font-weight: 800; line-height: 40px; }
-    .system-page .header-divider { border-top: 2px solid #05070a; margin: 0; }
-    .system-page .body { padding: 16px 22px 0; }
-    .system-page .value { text-align: center; font-weight: 800; font-size: 32px; line-height: 36px; }
-    .system-page .text { color: #05070a; font: 700 20px/24px system-ui, sans-serif; white-space: pre-wrap; }
-    .system-page .text.small { font: 700 12px/16px system-ui, sans-serif; }
-    .system-page .component-divider { border-top: 1px solid #c8c8c8; margin: 0 0 12px; }
-    .system-page .spacer.small { height: 12px; } .system-page .spacer.medium { height: 24px; } .system-page .spacer.large { height: 42px; }
-    .system-page .actions { display: flex; justify-content: center; gap: 14px; }
-    .system-page .action { min-width: 76px; box-sizing: border-box; border-radius: 14px; background: #d6d7da; color: #05070a; padding: 5px 14px; text-align: center; font-weight: 800; font-size: 18px; line-height: 20px; }
-    .system-page .action.selected { background: #c7c9cf; }
-    .message.user { border: 1px solid #3182f6; background: #16365c; }
-    .message.assistant { border: 1px solid #3ecf8e; background: #192b24; }
-    .message small { display: block; color: #8fa1ba; margin-bottom: 3px; }
-    .view-actions { position: absolute; left: 10px; right: 10px; bottom: 8px; display: flex; justify-content: center; gap: 14px; }
-    .view-action { min-width: 78px; box-sizing: border-box; border-radius: 14px; background: #263247; color: #f4f7fb; padding: 5px 14px; text-align: center; font-weight: 800; font-size: 16px; line-height: 20px; }
-    .view-action.selected { background: #3182f6; }
-    .list-item.selected { background: #203f69; color: white; }
-    .list-item small { float: right; color: #8fa1ba; }
-    .progress { height: 12px; border-radius: 8px; background: #263247; overflow: hidden; margin-top: 20px; }
-    .progress span { display: block; height: 100%; background: #3182f6; }
-    .image-placeholder { height: 190px; border: 1px dashed #68758b; border-radius: 8px; display: grid; place-items: center; color: #8fa1ba; text-align: center; }
-    .empty { height: 100%; display: grid; align-content: start; color: #8190a8; }
-    button { width: 100%; margin-top: 16px; padding: 14px; border: 0; border-radius: 999px; background: #3182f6; color: white; font-weight: 700; }
-    button:active { background: #1759ad; }
-    label { display: grid; gap: 6px; margin: 14px 0; }
+    :root {
+      color-scheme: dark;
+      font-family: system-ui, sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      background: #10141d;
+      color: #e6ebf2;
+    }
+
+    main {
+      display: grid;
+      gap: 20px;
+      grid-template-columns: 286px 300px;
+      align-items: start;
+      padding: 20px;
+    }
+
+    .device,
+    .panel {
+      background: #1a2230;
+      border: 1px solid #344158;
+      border-radius: 18px;
+      padding: 18px;
+    }
+
+    .display-shell {
+      width: 248px;
+      height: 288px;
+      border: 4px solid #05070a;
+      border-radius: 8px;
+      overflow: hidden;
+      background: #080b12;
+    }
+
+    #display {
+      display: block;
+      width: 240px;
+      height: 280px;
+      image-rendering: auto;
+      background: #000;
+    }
+
+    .control-label {
+      margin-top: 16px;
+      color: #9cabc0;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+    }
+
+    .gesture-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    button {
+      border: 0;
+      border-radius: 10px;
+      background: #3182f6;
+      color: white;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+      touch-action: manipulation;
+    }
+
+    button:active,
+    button.pressed {
+      background: #1759ad;
+      transform: translateY(1px);
+    }
+
+    button:disabled {
+      cursor: wait;
+      opacity: .55;
+    }
+
+    .gesture-button {
+      min-height: 42px;
+      padding: 8px 5px;
+      font-size: 12px;
+    }
+
+    #physical-button {
+      width: 100%;
+      min-height: 46px;
+      margin-top: 10px;
+      padding: 10px 14px;
+      border-radius: 999px;
+      background: #263247;
+    }
+
+    #physical-button:active,
+    #physical-button.pressed {
+      background: #40516f;
+    }
+
+    .row {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .led {
+      width: 18px;
+      height: 18px;
+      border: 1px solid #68758b;
+      border-radius: 50%;
+      background: rgb(0, 0, 0);
+    }
+
+    .display-state {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin: 14px 0;
+    }
+
+    .display-state div {
+      padding: 8px;
+      border-radius: 8px;
+      background: #151e2c;
+      color: #b9c5d8;
+      font-size: 12px;
+    }
+
+    .display-state strong {
+      display: block;
+      margin-top: 3px;
+      color: #f4f7fb;
+      font-size: 14px;
+    }
+
+    label {
+      display: grid;
+      gap: 6px;
+      margin: 14px 0;
+    }
+
     input[type="range"] { width: 100%; }
-    .row { display: flex; justify-content: space-between; gap: 12px; }
-    .led { width: 18px; height: 18px; border-radius: 50%; background: rgb(0,0,0); border: 1px solid #68758b; }
-    pre { white-space: pre-wrap; font-size: 12px; color: #b9c5d8; }
-    @media (max-width: 620px) { main { grid-template-columns: 1fr; } }
+
+    pre {
+      max-height: 250px;
+      margin: 14px 0 0;
+      overflow: auto;
+      white-space: pre-wrap;
+      color: #b9c5d8;
+      font-size: 11px;
+    }
+
+    #notice {
+      min-height: 18px;
+      margin-top: 8px;
+      color: #ff9b9b;
+      font-size: 12px;
+    }
+
+    @media (max-width: 650px) {
+      main { grid-template-columns: 1fr; }
+    }
   </style>
 </head>
 <body>
 <main>
   <section class="device">
-    <div class="screen" id="screen"></div>
-    <canvas id="raw-frame" width="240" height="280"></canvas>
-    <button id="button">Physical Button</button>
+    <div class="display-shell">
+      <canvas id="display" width="240" height="280" aria-label="240 by 280 device display"></canvas>
+    </div>
+
+    <div class="control-label">Gesture shortcuts</div>
+    <div class="gesture-grid">
+      <button class="gesture-button" data-clicks="1" type="button">Single Click</button>
+      <button class="gesture-button" data-clicks="2" type="button">Double Click</button>
+      <button class="gesture-button" data-clicks="3" type="button" title="Available outside Home">Triple Click</button>
+    </div>
+    <button id="physical-button" type="button">Press &amp; Hold (Raw Button)</button>
+    <div id="notice" role="status"></div>
   </section>
+
   <section class="panel">
     <div class="row"><strong>Simulator Backend</strong><span class="led" id="led"></span></div>
+    <div class="display-state">
+      <div>UI mode<strong id="ui-mode">Loading</strong></div>
+      <div>Frame sequence<strong id="frame-sequence">0</strong></div>
+    </div>
     <label>Battery <span id="battery-value">100%</span><input id="battery" type="range" min="0" max="100" value="100"></label>
     <label><span><input id="charging" type="checkbox"> Charging</span></label>
     <label><span><input id="network" type="checkbox" checked> Network online</span></label>
     <pre id="state">Loading...</pre>
   </section>
 </main>
+
 <script>
+const DISPLAY_WIDTH = 240;
+const DISPLAY_HEIGHT = 280;
+const FRAME_INTERVAL_MS = 1000 / 30;
+
 const stateNode = document.querySelector("#state");
-const screenNode = document.querySelector("#screen");
-const rawFrameNode = document.querySelector("#raw-frame");
-const rawContext = rawFrameNode.getContext("2d");
-let renderedFrameSequence = -1;
-let rawFrameActive = false;
-let rawFrameLoading = false;
+const displayNode = document.querySelector("#display");
+const displayContext = displayNode.getContext("2d", {alpha: false});
+const nativeFrameCanvas = document.createElement("canvas");
+nativeFrameCanvas.width = DISPLAY_WIDTH;
+nativeFrameCanvas.height = DISPLAY_HEIGHT;
+const nativeFrameContext = nativeFrameCanvas.getContext("2d", {alpha: false});
 const ledNode = document.querySelector("#led");
 const batteryNode = document.querySelector("#battery");
 const batteryValueNode = document.querySelector("#battery-value");
 const chargingNode = document.querySelector("#charging");
 const networkNode = document.querySelector("#network");
+const uiModeNode = document.querySelector("#ui-mode");
+const frameSequenceNode = document.querySelector("#frame-sequence");
+const physicalButton = document.querySelector("#physical-button");
+const gestureButtons = [...document.querySelectorAll(".gesture-button")];
+const noticeNode = document.querySelector("#notice");
+
+let uiMode = "declarative";
+let latestFrameSequence = -1;
+let renderedFrameSequence = -1;
+let frameLoading = false;
+let framePending = false;
+let physicalPressed = false;
+
+function paintDisplay() {
+  const pixelRatio = Math.max(1, window.devicePixelRatio || 1);
+  const targetWidth = Math.round(DISPLAY_WIDTH * pixelRatio);
+  const targetHeight = Math.round(DISPLAY_HEIGHT * pixelRatio);
+  if (displayNode.width !== targetWidth || displayNode.height !== targetHeight) {
+    displayNode.width = targetWidth;
+    displayNode.height = targetHeight;
+  }
+  displayContext.imageSmoothingEnabled = true;
+  displayContext.imageSmoothingQuality = "high";
+  displayContext.clearRect(0, 0, targetWidth, targetHeight);
+  displayContext.drawImage(nativeFrameCanvas, 0, 0, targetWidth, targetHeight);
+}
+
+window.addEventListener("resize", paintDisplay);
+paintDisplay();
+let gestureBusy = false;
+let tripleShortcutAvailable = false;
 
 async function api(path, options) {
   const response = await fetch(path, options);
@@ -93,7 +263,7 @@ async function api(path, options) {
   return response.json();
 }
 
-function render(state) {
+function renderState(state) {
   stateNode.textContent = JSON.stringify(state, null, 2);
   const {r, g, b} = state.led;
   ledNode.style.background = `rgb(${r},${g},${b})`;
@@ -101,192 +271,143 @@ function render(state) {
   batteryValueNode.textContent = `${state.battery.level}%`;
   chargingNode.checked = state.battery.charging;
   networkNode.checked = state.network.online;
-  if (state.ui.mode === "raw_frame") {
-    rawFrameActive = true;
-    screenNode.style.display = "none";
-    rawFrameNode.style.display = "block";
-    if (state.ui.frame_sequence !== renderedFrameSequence) {
-      renderedFrameSequence = state.ui.frame_sequence;
-      void renderRawFrame();
-    }
-  } else {
-    rawFrameActive = false;
-    rawFrameNode.style.display = "none";
-    screenNode.style.display = "block";
-    renderView(state.ui.view);
-  }
+  uiMode = state.ui.mode;
+  latestFrameSequence = state.ui.frame_sequence;
+  tripleShortcutAvailable = (
+    uiMode === "raw_frame"
+    || (state.ui.view && state.ui.view.kind !== "list")
+  );
+  updateGestureButtons();
+  uiModeNode.textContent = uiMode;
+  frameSequenceNode.textContent = String(latestFrameSequence);
+  if (latestFrameSequence !== renderedFrameSequence) void renderFrame();
 }
 
-async function renderRawFrame() {
-  if (!rawFrameActive || rawFrameLoading) return;
-  rawFrameLoading = true;
+async function renderFrame() {
+  if (frameLoading) {
+    framePending = true;
+    return;
+  }
+  frameLoading = true;
+  const requestedSequence = latestFrameSequence;
   try {
-  const response = await fetch("/api/frame", {cache: "no-store"});
-  if (!response.ok) return;
-  const bytes = new Uint8Array(await response.arrayBuffer());
-  const image = rawContext.createImageData(240, 280);
-  for (let pixel = 0, offset = 0; pixel < 240 * 280; pixel++, offset += 2) {
-    const value = (bytes[offset] << 8) | bytes[offset + 1];
-    const target = pixel * 4;
-    image.data[target] = ((value >> 11) & 0x1f) * 255 / 31;
-    image.data[target + 1] = ((value >> 5) & 0x3f) * 255 / 63;
-    image.data[target + 2] = (value & 0x1f) * 255 / 31;
-    image.data[target + 3] = 255;
-  }
-  rawContext.putImageData(image, 0, 0);
+    const response = await fetch("/api/frame", {cache: "no-store"});
+    if (!response.ok) throw new Error(await response.text());
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    const expected = DISPLAY_WIDTH * DISPLAY_HEIGHT * 2;
+    if (bytes.length !== expected) {
+      throw new Error(`Expected ${expected} frame bytes, received ${bytes.length}`);
+    }
+    const image = nativeFrameContext.createImageData(DISPLAY_WIDTH, DISPLAY_HEIGHT);
+    for (let pixel = 0, offset = 0; pixel < DISPLAY_WIDTH * DISPLAY_HEIGHT; pixel++, offset += 2) {
+      const value = (bytes[offset] << 8) | bytes[offset + 1];
+      const target = pixel * 4;
+      image.data[target] = ((value >> 11) & 0x1f) * 255 / 31;
+      image.data[target + 1] = ((value >> 5) & 0x3f) * 255 / 63;
+      image.data[target + 2] = (value & 0x1f) * 255 / 31;
+      image.data[target + 3] = 255;
+    }
+    nativeFrameContext.putImageData(image, 0, 0);
+    paintDisplay();
+    renderedFrameSequence = requestedSequence;
+    noticeNode.textContent = "";
+  } catch (error) {
+    noticeNode.textContent = String(error);
   } finally {
-    rawFrameLoading = false;
-  }
-}
-
-function node(tag, text, className) {
-  const element = document.createElement(tag);
-  if (text !== undefined) element.textContent = text;
-  if (className) element.className = className;
-  return element;
-}
-
-function addHeader(view) {
-  screenNode.append(node("h2", view.title || view.kind));
-  if (view.status) screenNode.append(node("div", view.status, "status"));
-}
-
-function renderView(view) {
-  screenNode.replaceChildren();
-  screenNode.classList.remove("home");
-  if (!view) {
-    const empty = node("div", undefined, "empty");
-    empty.append(node("h2", "LAFVIN HAT"));
-    empty.append(node("p", "No app in foreground"));
-    screenNode.append(empty);
-    return;
-  }
-  if (view.kind === "dialog") {
-    const dialog = node("div", undefined, `dialog ${view.emphasis || "normal"}`);
-    dialog.append(node("h2", view.title));
-    dialog.append(node("p", view.message));
-    dialog.append(node("small", view.actions.join("  ")));
-    screenNode.append(dialog);
-    return;
-  }
-  if (view.kind === "system_page") {
-    const panel = node("div", undefined, "system-page");
-    panel.append(node("h2", view.title));
-    panel.append(node("div", undefined, "header-divider"));
-    const body = node("div", undefined, "body");
-    let actionIndex = 0;
-    for (const component of view.components) {
-      if (component.type === "spacer") {
-        body.append(node("div", undefined, `spacer ${component.size}`));
-      } else if (component.type === "divider") {
-        body.append(node("div", undefined, "component-divider"));
-      } else if (component.type === "value") {
-        body.append(node("div", component.text, "value"));
-      } else if (component.type === "text") {
-        body.append(node("div", component.text, `text ${component.style || "body"}`));
-      } else if (component.type === "button_row") {
-        const actions = node("div", undefined, "actions");
-        for (const action of component.actions) {
-          actions.append(node(
-            "div",
-            action.label,
-            `action ${actionIndex === view.selected ? "selected" : ""}`
-          ));
-          actionIndex += 1;
-        }
-        body.append(actions);
-      }
+    frameLoading = false;
+    if (framePending) {
+      framePending = false;
+      void renderFrame();
     }
-    panel.append(body);
-    screenNode.append(panel);
-    return;
-  }
-  if (view.kind === "list") {
-    screenNode.classList.add("home");
-    screenNode.append(node("h2", view.title || "LAFVIN HAT", "home-title"));
-    screenNode.append(node("div", undefined, "home-divider"));
-    const list = node("div", undefined, "home-list");
-    const start = Math.max(0, Math.min(view.selected - 2, Math.max(0, view.items.length - 5)));
-    view.items.slice(start, start + 5)
-      .forEach((item, offset) => {
-        const index = start + offset;
-        const active = index === view.selected;
-        const row = node("div", undefined, `home-list-item ${active ? "selected" : ""}`);
-        row.append(node("span", item.label));
-        if (item.meta && !["installed", "stopped"].includes(item.meta.toLowerCase())) {
-          row.append(node("small", item.meta));
-        }
-        list.append(row);
-      });
-    screenNode.append(list);
-    return;
-  }
-  addHeader(view);
-  if (view.kind === "text") {
-    screenNode.append(node("p", view.text, view.emphasis || "normal"));
-    appendViewActions(view);
-  } else if (view.kind === "chat") {
-    for (const message of view.messages.slice(-5)) {
-      const bubble = node("div", undefined, `message ${message.role}`);
-      bubble.append(node("small", message.role === "user" ? "You" : "Assistant"));
-      bubble.append(node("span", message.text));
-      screenNode.append(bubble);
-    }
-    appendViewActions(view);
-    screenNode.scrollTop = screenNode.scrollHeight;
-  } else if (view.kind === "progress") {
-    screenNode.append(node("p", view.message));
-    const track = node("div", undefined, "progress");
-    const bar = node("span");
-    bar.style.width = view.value === null ? "30%" : `${view.value * 100}%`;
-    track.append(bar);
-    screenNode.append(track);
-  } else if (view.kind === "image") {
-    screenNode.append(node("div", `Image asset\n${view.source.path}`, "image-placeholder"));
   }
 }
 
-function appendViewActions(view) {
-  if (!view.actions) return;
-  const actions = node("div", undefined, "view-actions");
-  view.actions.forEach((action, index) => {
-    actions.append(node(
-      "div",
-      action.label,
-      `view-action ${index === view.selected ? "selected" : ""}`
-    ));
-  });
-  screenNode.append(actions);
+async function refresh() {
+  try {
+    renderState(await api("/api/state"));
+  } catch (error) {
+    noticeNode.textContent = String(error);
+  }
 }
 
-async function refresh() { render(await api("/api/state")); }
 async function updateState() {
-  render(await api("/api/state", {
-    method: "POST",
-    headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({
-      battery_level: Number(batteryNode.value),
-      charging: chargingNode.checked,
-      network_online: networkNode.checked
-    })
-  }));
+  try {
+    renderState(await api("/api/state", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        battery_level: Number(batteryNode.value),
+        charging: chargingNode.checked,
+        network_online: networkNode.checked
+      })
+    }));
+  } catch (error) {
+    noticeNode.textContent = String(error);
+  }
 }
 
-const button = document.querySelector("#button");
-button.addEventListener("pointerdown", async () => render(await api("/api/button", {
-  method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({pressed: true})
-})));
-for (const eventName of ["pointerup", "pointercancel", "pointerleave"]) {
-  button.addEventListener(eventName, async () => render(await api("/api/button", {
-    method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({pressed: false})
-  })));
+async function setPhysicalButton(pressed) {
+  if (pressed === physicalPressed) return;
+  physicalPressed = pressed;
+  physicalButton.classList.toggle("pressed", pressed);
+  try {
+    renderState(await api("/api/button", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({pressed})
+    }));
+  } catch (error) {
+    noticeNode.textContent = String(error);
+  }
 }
+
+function updateGestureButtons() {
+  gestureButtons.forEach(button => {
+    const isTriple = Number(button.dataset.clicks) === 3;
+    button.disabled = gestureBusy || (isTriple && !tripleShortcutAvailable);
+  });
+}
+
+async function triggerGesture(clicks) {
+  gestureBusy = true;
+  updateGestureButtons();
+  try {
+    renderState(await api("/api/gesture", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({clicks})
+    }));
+    window.setTimeout(refresh, 220);
+  } catch (error) {
+    noticeNode.textContent = String(error);
+  } finally {
+    gestureBusy = false;
+    updateGestureButtons();
+  }
+}
+
+gestureButtons.forEach(button => {
+  button.addEventListener("click", () => void triggerGesture(Number(button.dataset.clicks)));
+});
+
+physicalButton.addEventListener("pointerdown", event => {
+  event.preventDefault();
+  physicalButton.setPointerCapture(event.pointerId);
+  void setPhysicalButton(true);
+});
+for (const eventName of ["pointerup", "pointercancel"]) {
+  physicalButton.addEventListener(eventName, () => void setPhysicalButton(false));
+}
+
 batteryNode.addEventListener("change", updateState);
 chargingNode.addEventListener("change", updateState);
 networkNode.addEventListener("change", updateState);
-refresh();
-setInterval(refresh, 1000);
-setInterval(renderRawFrame, 1000 / 30);
+
+void refresh();
+window.setInterval(refresh, 1000);
+window.setInterval(() => {
+  if (uiMode === "raw_frame") void renderFrame();
+}, FRAME_INTERVAL_MS);
 </script>
 </body>
 </html>

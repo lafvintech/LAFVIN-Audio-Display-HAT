@@ -12,6 +12,8 @@ def test_load_raw_frame_game_manifest() -> None:
     manifest = load_manifest(ROOT / "apps" / "one_button_jump")
 
     assert manifest.app_id == "dev.lafvin.jump"
+    assert manifest.name == "Dino Runner"
+    assert manifest.version == "0.3.1"
     assert manifest.ui_mode == "raw_frame"
     assert "display.raw_frame" in manifest.permissions
 
@@ -32,6 +34,16 @@ def test_load_system_status_manifest() -> None:
     assert manifest.ui_mode == "raw_frame"
     assert "display.raw_frame" in manifest.permissions
     assert "button" in manifest.permissions
+
+
+def test_load_rgb_led_manifest() -> None:
+    manifest = load_manifest(ROOT / "apps" / "rgb_led")
+
+    assert manifest.app_id == "dev.lafvin.rgb-led"
+    assert manifest.ui_mode == "raw_frame"
+    assert "display.raw_frame" in manifest.permissions
+    assert "button" in manifest.permissions
+    assert "led" in manifest.permissions
 
 
 def test_load_system_volume_manifest() -> None:
@@ -67,6 +79,8 @@ def test_load_m5_ai_app_manifests(
         "network",
         "ai",
     } <= manifest.permissions
+    if directory == "chatbot":
+        assert "led" in manifest.permissions
 
 
 def test_manifest_directory_requires_manifest_yaml(tmp_path: Path) -> None:

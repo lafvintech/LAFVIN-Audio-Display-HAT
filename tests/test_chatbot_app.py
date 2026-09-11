@@ -2,11 +2,18 @@ from __future__ import annotations
 
 import asyncio
 import importlib.util
+import json
 from pathlib import Path
 
 import pytest
+from PIL import Image
 
-from lafvin_hat.ai import FakeAIProvider, Message, StreamingSpeechPipeline
+from lafvin_hat.ai import (
+    FakeAIProvider,
+    Message,
+    StreamingSpeechPipeline,
+    ToolCall,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -159,6 +166,89 @@ def test_chatbot_display_switches_pages_and_scrolls_with_speech() -> None:
     asyncio.run(scenario())
 
 
+def test_chatbot_uses_twemoji_header_without_title_divider(monkeypatch) -> None:
+    def reject_legacy_header(*_args, **_kwargs):
+        raise AssertionError("Chatbot must not render the legacy title or divider")
+
+    monkeypatch.setattr(chatbot.Canvas, "title", reject_legacy_header)
+    monkeypatch.setattr(chatbot.Canvas, "divider", reject_legacy_header)
+
+    async def scenario() -> None:
+        display = chatbot.ChatbotDisplay(_Frame())
+        await display.show_idle()
+
+        idle_canvas = display._compose_canvas()
+        idle_emoji = idle_canvas.image.crop((91, 6, 149, 64))
+        status_pixels = set(idle_canvas.image.crop((8, 6, 85, 30)).getdata())
+        assert status_pixels != {idle_canvas.theme.background}
+        assert len(set(idle_emoji.getdata())) > 8
+        assert idle_canvas.image.getpixel((8, 70)) == idle_canvas.theme.background
+
+        await display.show_listening()
+        listening_canvas = display._compose_canvas()
+        listening_emoji = listening_canvas.image.crop((91, 6, 149, 64))
+        assert listening_emoji.tobytes() != idle_emoji.tobytes()
+
+        await display.append_answer_text("A compact answer.")
+        answer_canvas = display._compose_canvas()
+        answer_emoji = answer_canvas.image.crop((91, 6, 149, 64))
+        assert answer_canvas.image.getpixel((8, 70)) == answer_canvas.theme.background
+        assert answer_emoji.tobytes() != listening_emoji.tobytes()
+        await display.close()
+
+    asyncio.run(scenario())
+
+
+def test_chatbot_uses_only_the_six_selected_twemoji_assets() -> None:
+    expected = {
+        "idle": "1f642.png",
+        "listening": "1f442.png",
+        "thinking": "1f914.png",
+        "answering": "1f600.png",
+        "error": "2639.png",
+        "configuration_error": "26a0.png",
+    }
+
+    assert {
+        status: filename
+        for status, (filename, _label) in chatbot.STATUS_EMOJI.items()
+    } == expected
+    directory = chatbot.resolve_emoji_directory(project_root=ROOT)
+    loaded = chatbot.load_emoji_images(project_root=ROOT)
+    assert set(loaded) == set(expected)
+    for status, filename in expected.items():
+        with Image.open(directory / filename) as source:
+            assert source.format == "PNG"
+            assert source.size == (72, 72)
+            alpha = source.convert("RGBA").getchannel("A")
+            assert alpha.getextrema() == (0, 255)
+        assert loaded[status].mode == "RGBA"
+        assert loaded[status].size == (chatbot.EMOJI_SIZE, chatbot.EMOJI_SIZE)
+
+
+def test_chatbot_prefers_configured_project_root_for_emoji(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    directory = tmp_path / "assets" / "emoji"
+    directory.mkdir(parents=True)
+    monkeypatch.setenv("LAFVIN_PROJECT_ROOT", str(tmp_path))
+
+    assert chatbot.resolve_emoji_directory() == directory
+
+
+def test_configuration_error_uses_warning_emoji_state() -> None:
+    async def scenario() -> None:
+        display = chatbot.ChatbotDisplay(_Frame())
+        await display.show_configuration_error(RuntimeError("missing API key"))
+
+        assert display._state["status"] == "configuration_error"
+        assert display._status_visual() == ("configuration_error", "Setup Error")
+        await display.close()
+
+    asyncio.run(scenario())
+
+
 def test_chatbot_display_serializes_concurrent_frame_commits() -> None:
     class SlowFrame(_Frame):
         def __init__(self) -> None:
@@ -272,6 +362,77 @@ def test_chatbot_turn_keeps_history_but_displays_only_current_answer(
         assert display._state["text"] == "First answer. Second answer!"
         assert display._state["status"] == "idle"
         assert len(app.audio.played) == 2
+        await display.close()
+
+    asyncio.run(scenario())
+
+
+def test_chatbot_turn_exposes_device_tools_to_pipeline(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class ToolAudio:
+        async def get_volume(self) -> int:
+            return 70
+
+    class ToolApp:
+        def __init__(self) -> None:
+            self.audio = ToolAudio()
+
+    class ToolPipeline:
+        def __init__(self) -> None:
+            self.names: list[str] = []
+            self.result: dict = {}
+
+        async def run(
+            self,
+            messages,
+            *,
+            tools,
+            tool_executor,
+            on_text,
+            **_kwargs,
+        ) -> str:
+            self.names = [tool.name for tool in tools]
+            assert tool_executor is not None
+            self.result = json.loads(
+                await tool_executor(ToolCall("tool-1", "get_volume", {}))
+            )
+            response = "The current volume is 70%."
+            await on_text(response)
+            return response
+
+    async def scenario() -> None:
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(chatbot, "TOOLS_ENABLED", True)
+        recording = tmp_path / "recording.wav"
+        recording.write_bytes(b"recording")
+        provider = FakeAIProvider(transcript="What is the volume?")
+        pipeline = ToolPipeline()
+        history: list[Message] = []
+        display = chatbot.ChatbotDisplay(_Frame())
+
+        await chatbot._run_turn(
+            ToolApp(),
+            pipeline,
+            provider,
+            history,
+            recording,
+            display,
+        )
+
+        assert pipeline.names == [
+            "get_device_status",
+            "get_volume",
+            "set_volume",
+            "set_rgb_led",
+        ]
+        assert pipeline.result == {"ok": True, "volume_percent": 70}
+        assert history[-1] == Message(
+            "assistant",
+            "The current volume is 70%.",
+        )
+        assert display._state["status"] == "idle"
         await display.close()
 
     asyncio.run(scenario())

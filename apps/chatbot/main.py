@@ -5,15 +5,22 @@ import contextlib
 import logging
 import os
 import time
+from collections.abc import Iterator
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+from PIL import Image
+
 from lafvin_hat.ai import (
     ASRProvider,
+    DEVICE_TOOL_STATUS,
+    DeviceToolSet,
     Message,
     PipelineStageError,
     SpeechSegment,
     StreamingSpeechPipeline,
+    ToolCall,
     configure_ai_logging,
     providers_from_environment,
 )
@@ -21,7 +28,6 @@ from lafvin_hat.sdk import DeviceApp, RecordingSession
 from lafvin_hat.ui import Canvas, ChatMessage
 
 
-TITLE = "AI Chatbot"
 SYSTEM_PROMPT = os.getenv(
     "LAFVIN_CHATBOT_SYSTEM_PROMPT",
     (
@@ -39,6 +45,95 @@ logger = logging.getLogger("lafvin_hat.app.chatbot")
 CONTROL_LABELS = ["Talk", "Back"]
 DISPLAY_MAX_FPS = 12
 SCROLL_FOCUS_RATIO = 0.65
+TTS_CHUNK_TARGET_UNITS = 120
+TTS_CHUNK_MAX_SENTENCES = 2
+TTS_CHUNK_HARD_LIMIT_UNITS = 180
+CONTENT_Y = 76
+CONTENT_X = 18
+CONTENT_WIDTH_MARGIN = 36
+EMOJI_TOP = 6
+EMOJI_SIZE = 58
+ACTION_SPACE = 58
+PAGE_BOTTOM_MARGIN = 14
+TOOLS_ENABLED = os.getenv("LAFVIN_CHATBOT_TOOLS_ENABLED", "true").lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+EMOJI_ASSET_RELATIVE_PATH = Path("assets") / "emoji"
+STATUS_EMOJI: dict[str, tuple[str, str]] = {
+    "idle": ("1f642.png", "Ready"),
+    "listening": ("1f442.png", "Listening"),
+    "thinking": ("1f914.png", "Thinking"),
+    "answering": ("1f600.png", "Speaking"),
+    "error": ("2639.png", "Error"),
+    "configuration_error": ("26a0.png", "Setup Error"),
+}
+
+
+def resolve_emoji_directory(*, project_root: Path | None = None) -> Path:
+    if project_root is not None:
+        return project_root / EMOJI_ASSET_RELATIVE_PATH
+    for candidate_root in _candidate_project_roots():
+        candidate = candidate_root / EMOJI_ASSET_RELATIVE_PATH
+        if candidate.is_dir():
+            return candidate
+    return _source_project_root() / EMOJI_ASSET_RELATIVE_PATH
+
+
+def load_emoji_images(
+    *,
+    project_root: Path | None = None,
+) -> dict[str, Image.Image]:
+    directory = resolve_emoji_directory(project_root=project_root)
+    images: dict[str, Image.Image] = {}
+    for status, (filename, _label) in STATUS_EMOJI.items():
+        path = directory / filename
+        try:
+            images[status] = _load_emoji_file(str(path.resolve()))
+        except (OSError, ValueError):
+            logger.warning(
+                "event=emoji_load_failed status=%s path=%s",
+                status,
+                path,
+                exc_info=True,
+            )
+    return images
+
+
+@lru_cache(maxsize=16)
+def _load_emoji_file(path: str) -> Image.Image:
+    with Image.open(path) as source:
+        return source.convert("RGBA").resize(
+            (EMOJI_SIZE, EMOJI_SIZE),
+            Image.Resampling.LANCZOS,
+        )
+
+
+def _candidate_project_roots() -> Iterator[Path]:
+    seen: set[Path] = set()
+    configured_root = os.getenv("LAFVIN_PROJECT_ROOT")
+    starts = [_source_project_root(), Path.cwd().resolve()]
+    if configured_root:
+        starts.insert(0, Path(configured_root).expanduser().resolve())
+    for start in starts:
+        for candidate in (start, *start.parents):
+            if candidate not in seen:
+                seen.add(candidate)
+                yield candidate
+    for candidate in (
+        Path("/opt/lafvin-hat"),
+        Path.home() / "LAFVIN-HAT",
+        Path.home() / "LAFVIN-Audio-Display-HAT",
+    ):
+        if candidate not in seen:
+            seen.add(candidate)
+            yield candidate
+
+
+def _source_project_root() -> Path:
+    return Path(__file__).resolve().parents[2]
 
 
 class ChatbotDisplay:
@@ -64,6 +159,7 @@ class ChatbotDisplay:
         self._render_completed = 0
         self._render_error: tuple[int, Exception] | None = None
         self._last_render_at = 0.0
+        self._emoji_images = load_emoji_images()
         self._closed = False
 
     async def set_selected(self, index: int) -> None:
@@ -136,7 +232,7 @@ class ChatbotDisplay:
         self._state = {
             "kind": "text",
             "text": f"AI configuration error: {str(error)[:220]}",
-            "status": "error",
+            "status": "configuration_error",
             "emphasis": "danger",
             "actions": False,
         }
@@ -241,6 +337,7 @@ class ChatbotDisplay:
                 segment.sequence,
             )
             return
+        started_at = time.monotonic()
         target = self._scroll_target(segment.display_end)
         if target <= self._scroll_top + 0.5:
             logger.info(
@@ -251,7 +348,7 @@ class ChatbotDisplay:
             )
             return
         self._scroll_sequence = segment.sequence
-        self._scroll_started_at = time.monotonic()
+        self._scroll_started_at = started_at
         logger.info(
             "stage=display_sync event=start sequence=%s char_end=%s "
             "duration_ms=%s start_y=%s target_y=%s",
@@ -373,36 +470,79 @@ class ChatbotDisplay:
                 self._render_event.set()
 
     async def _render_once(self) -> None:
+        canvas = self._compose_canvas()
+        await canvas.present(self.frame)
+
+    def _compose_canvas(self) -> Canvas:
         canvas = Canvas(width=self.frame.width, height=self.frame.height)
         actions = CONTROL_LABELS if self._state.get("actions", True) else None
-        if self._state.get("kind") == "chat":
-            canvas.chat_page(
-                TITLE,
-                self._state.get("messages", []),
-                status=self._state.get("status"),
-                streaming=bool(self._state.get("streaming")),
-                actions=actions,
-                selected=self.selected,
+        status, label = self._status_visual()
+        kind = self._state.get("kind")
+        canvas.clear()
+        canvas.draw.text(
+            (14, 12),
+            label,
+            fill=canvas.theme.text,
+            font=canvas.small_font,
+        )
+        emoji = self._emoji_images.get(status)
+        if emoji is not None:
+            canvas.bitmap(
+                emoji,
+                center_x=self.frame.width // 2,
+                top=EMOJI_TOP,
             )
-        elif self._state.get("kind") == "answer":
-            canvas.scrolling_text_page(
-                TITLE,
+
+        bottom_margin = ACTION_SPACE if actions else PAGE_BOTTOM_MARGIN
+        if kind == "chat":
+            visible_messages = list(self._state.get("messages", []))
+            awaiting_assistant_text = (
+                bool(self._state.get("streaming"))
+                and bool(visible_messages)
+                and isinstance(visible_messages[-1], ChatMessage)
+                and visible_messages[-1].role.lower() == "assistant"
+                and not visible_messages[-1].text.strip()
+            )
+            if awaiting_assistant_text:
+                visible_messages.pop()
+            canvas.message_list(
+                visible_messages,
+                y=CONTENT_Y,
+                height=self.frame.height - CONTENT_Y - bottom_margin,
+                align_bottom=not awaiting_assistant_text,
+            )
+        elif kind == "answer":
+            canvas.text_box(
                 str(self._state.get("text", "")),
+                x=CONTENT_X,
+                y=CONTENT_Y,
+                width=self.frame.width - CONTENT_WIDTH_MARGIN,
+                height=self.frame.height - CONTENT_Y - bottom_margin,
                 scroll_top=self._scroll_top,
-                status=self._state.get("status"),
-                actions=actions,
-                selected=self.selected,
             )
         else:
-            canvas.text_page(
-                TITLE,
+            canvas.text_box(
                 str(self._state.get("text", "")),
-                status=self._state.get("status"),
-                actions=actions,
-                selected=self.selected,
-                emphasis=str(self._state.get("emphasis", "primary")),
+                x=22,
+                y=CONTENT_Y,
+                width=self.frame.width - 44,
+                height=self.frame.height - CONTENT_Y - bottom_margin,
+                fill=self._body_color(canvas),
             )
-        await canvas.present(self.frame)
+        if actions:
+            canvas.action_bar(actions, selected=self.selected)
+        return canvas
+
+    def _status_visual(self) -> tuple[str, str]:
+        status = str(self._state.get("status", "idle")).lower()
+        if status not in STATUS_EMOJI:
+            status = "idle"
+        return status, STATUS_EMOJI[status][1]
+
+    def _body_color(self, canvas: Canvas) -> tuple[int, int, int]:
+        if str(self._state.get("emphasis", "primary")) == "danger":
+            return canvas.theme.danger
+        return canvas.theme.text
 
     async def _animate_speech_segment(self, segment: SpeechSegment) -> None:
         assert segment.duration_ms is not None
@@ -437,14 +577,15 @@ class ChatbotDisplay:
         if self._state.get("kind") != "answer":
             return 0.0
         canvas = Canvas(width=self.frame.width, height=self.frame.height)
-        text_y = 70 if self._state.get("status") else 58
-        content_height = self.frame.height - text_y - (
-            58 if self._state.get("actions", True) else 14
+        content_height = self.frame.height - CONTENT_Y - (
+            ACTION_SPACE
+            if self._state.get("actions", True)
+            else PAGE_BOTTOM_MARGIN
         )
         return canvas.text_scroll_target(
             str(self._state.get("text", "")),
             char_end,
-            width=self.frame.width - 44,
+            width=self.frame.width - CONTENT_WIDTH_MARGIN,
             height=content_height,
             focus_ratio=SCROLL_FOCUS_RATIO,
         )
@@ -716,6 +857,15 @@ async def _run_turn(
         ) -> None:
             await display.finish_speech_segment(segment, completed)
 
+        device_tools = DeviceToolSet(app)
+
+        async def execute_tool(call: ToolCall) -> str:
+            await display.show_status(
+                DEVICE_TOOL_STATUS.get(call.name, "Using tool..."),
+                "thinking",
+            )
+            return await device_tools.execute(call)
+
         response = await pipeline.run(
             prompt,
             on_text=on_text,
@@ -724,6 +874,11 @@ async def _run_turn(
             text_flush_interval=0.12,
             on_playback_start=on_playback_start,
             on_playback_end=on_playback_end,
+            tools=device_tools.definitions if TOOLS_ENABLED else (),
+            tool_executor=execute_tool if TOOLS_ENABLED else None,
+            speech_chunk_target_units=TTS_CHUNK_TARGET_UNITS,
+            speech_chunk_max_sentences=TTS_CHUNK_MAX_SENTENCES,
+            speech_chunk_hard_limit_units=TTS_CHUNK_HARD_LIMIT_UNITS,
         )
         if not response.strip():
             raise RuntimeError("The language model returned an empty response")

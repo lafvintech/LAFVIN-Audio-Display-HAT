@@ -13,8 +13,9 @@ same frame is presented by the hardware backend and the simulator.
   does not need to understand Toolkit components.
 - Add a Toolkit primitive only after a real application needs a reusable
   version of it. Do not add page-specific one-off helpers.
-- Prefer a normal Toolkit page for information and controls. Use custom Raw
-  Frame drawing for animation-heavy or media-heavy work.
+- Prefer Toolkit Canvas for normal pages and lightweight animation. Use custom
+  Raw Frame bytes only when measured performance or media processing requires
+  lower-level control.
 
 The public first-pass surface is intentionally small:
 
@@ -86,6 +87,14 @@ second UI path.
 Use `button_row()` or `action_bar()` for selectable actions. The Toolkit only
 draws which index is selected; it does not decide what a click or hold means.
 
+Use `bitmap()` to place a transparent Pillow image by horizontal center and top
+coordinate. Pass `size` when a square resize is needed; Toolkit applies LANCZOS
+filtering before alpha compositing it onto the RGB canvas. Load and resize
+frequently rendered images once in the App instead of reopening them for every
+frame. AI Chatbot is the reference layout: it caches six selected Twemoji PNGs,
+keeps the status at the upper left, and uses a consistent top-centered image on
+every state page.
+
 ## Typography and Text
 
 The default UI typeface is the checkout-bundled
@@ -129,12 +138,15 @@ clear two-line state beats a paragraph of diagnostics.
 
 ## When to Use Custom Drawing
 
-Use custom Raw Frame drawing when the Toolkit would hide useful control over
-timing or pixels:
+An App can own frame pacing, physics, and custom drawing while still using a
+reused Toolkit `Canvas` for its image, fonts, theme, RGB565 encoding, and frame
+presentation. Dino Runner is the reference for this combination.
 
-- game loops and frame pacing
+Use custom Raw Frame bytes when the Toolkit would hide useful control over
+timing or pixel transport:
+
 - video decode and presentation
-- image effects or full-screen animation
+- measured image effects that cannot meet their frame budget through Canvas
 - specialized visualizations that are not shared by normal pages
 
 Even a custom-drawn application should preserve the system conventions: use

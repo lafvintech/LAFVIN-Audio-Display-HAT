@@ -17,8 +17,8 @@ support, first-party applications, UI Toolkit, and deployment tools.
   includes a versioned WM8960 hardware profile.
 - The Raw Frame SDK and UI Toolkit let applications render the same final
   pixels on physical hardware and in the simulator.
-- Six bundled foreground applications are provided: System Status, Volume,
-  Chatbot, Translator, One Button Jump, and Video Player.
+- Seven bundled foreground applications are provided: System Status, Volume,
+  Chatbot, Translator, Dino Runner, Video Player, and RGB LED.
 - Hardware Test is hosted by the Runtime for fast startup and direct hardware
   access.
 - Checkout-backed deployment provides the canonical `lafvin-hat` command,
@@ -261,6 +261,13 @@ LAFVIN_LLM_PROVIDER=fake
 LAFVIN_TTS_PROVIDER=fake
 ```
 
+AI Chatbot can use native LLM Tool Calling to read selected device status,
+read or change speaker volume, and set the RGB light. These four allowlisted
+tools are enabled by default; set `LAFVIN_CHATBOT_TOOLS_ENABLED=0` to disable
+them. Device-status tool results are sent to the configured LLM Provider. See
+[`apps/chatbot/README.md`](apps/chatbot/README.md) for the exact data fields,
+permissions, and example requests.
+
 The local `.env` file is ignored by Git. Do not expose API keys in screenshots,
 logs, bug reports, or commits.
 
@@ -295,7 +302,7 @@ The test asks you to confirm each observed hardware result.
 lafvin-hat runtime start --env-file .env --backend lafvin-hat
 ```
 
-Every command-line Runtime start atomically refreshes the six bundled
+Every command-line Runtime start atomically refreshes the seven bundled
 first-party applications into the selected Runtime data directory. Third-party
 applications are not changed.
 
@@ -623,14 +630,16 @@ lafvin-hat sim button released
 
 ## Application Rendering
 
-- System Status, Volume, Chatbot, and Translator use the app-facing Raw Frame
-  Toolkit in `lafvin_hat.ui`.
-- One Button Jump and Video Player draw custom Raw Frame content directly.
+- System Status, Volume, Chatbot, Translator, and Dino Runner use the
+  app-facing Raw Frame Toolkit in `lafvin_hat.ui`.
+- Video Player draws custom Raw Frame content directly.
 - Runtime Home, shell, and hosted Hardware Test remain Runtime-owned.
 - The legacy declarative UI service remains for compatibility and Runtime
   internals, but first-party foreground applications use Raw Frame manifests.
 
-Place the Video Player file at `assets/videos/test.mp4`.
+Place one or more Video Player files in `assets/videos/`. Supported suffixes
+are `.mp4`, `.mov`, `.mkv`, `.webm`, and `.avi`; the selection screen sorts
+them by filename.
 
 For application manifests, Toolkit use, Raw Frame lifecycle, logs, and
 ownership boundaries, read

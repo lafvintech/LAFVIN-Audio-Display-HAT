@@ -1,7 +1,7 @@
 schema_version: 1
 id: dev.lafvin.chatbot
 name: AI Chatbot
-version: 0.2.0
+version: 0.3.1
 description: Streaming voice chatbot using independent ASR, LLM, and TTS providers
 
 entrypoint:
@@ -13,6 +13,7 @@ entrypoint:
 permissions:
   - display.raw_frame
   - button
+  - led
   - microphone
   - speaker
   - network

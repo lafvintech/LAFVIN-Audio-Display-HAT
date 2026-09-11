@@ -242,6 +242,178 @@ class Canvas:
             gap=gap,
         )
 
+    def panel(
+        self,
+        *,
+        x: int,
+        y: int,
+        width: int,
+        height: int,
+        fill: tuple[int, int, int] | None = None,
+        outline: tuple[int, int, int] = (214, 218, 222),
+        radius: int = 10,
+        outline_width: int = 1,
+    ) -> "Canvas":
+        """Draw a reusable rounded content surface."""
+
+        self.draw.rounded_rectangle(
+            (x, y, x + width, y + height),
+            radius=radius,
+            fill=fill or self.theme.background,
+            outline=outline,
+            width=outline_width,
+        )
+        return self
+
+    def progress_ring(
+        self,
+        value: float | None,
+        *,
+        center_x: int,
+        center_y: int,
+        radius: int,
+        color: tuple[int, int, int],
+        track_color: tuple[int, int, int] = (218, 222, 226),
+        width: int = 7,
+        start: int = -90,
+        sweep: int = 300,
+    ) -> "Canvas":
+        """Draw a partial progress ring for a normalized value."""
+
+        bounds = (
+            center_x - radius,
+            center_y - radius,
+            center_x + radius,
+            center_y + radius,
+        )
+        self.draw.arc(
+            bounds,
+            start=start,
+            end=start + sweep,
+            fill=track_color,
+            width=width,
+        )
+        if value is not None:
+            normalized = min(1.0, max(0.0, float(value)))
+            if normalized > 0:
+                self.draw.arc(
+                    bounds,
+                    start=start,
+                    end=start + round(sweep * normalized),
+                    fill=color,
+                    width=width,
+                )
+        return self
+
+    def bitmap(
+        self,
+        source: Image.Image,
+        *,
+        center_x: int,
+        top: int,
+        size: int | None = None,
+    ) -> "Canvas":
+        """Composite a transparent bitmap, optionally resized as a square icon."""
+
+        rendered = source.convert("RGBA")
+        if size is not None:
+            if size <= 0:
+                raise ValueError("Bitmap size must be greater than zero")
+            rendered = rendered.resize(
+                (size, size),
+                Image.Resampling.LANCZOS,
+            )
+        left = round(center_x - rendered.width / 2)
+        self.image.paste(rendered, (left, top), rendered)
+        return self
+
+    def key_value_row(
+        self,
+        label: str,
+        value: str,
+        *,
+        x: int,
+        y: int,
+        width: int,
+        height: int,
+        label_width: int = 72,
+        fill: tuple[int, int, int] = (250, 250, 250),
+        outline: tuple[int, int, int] = (214, 218, 222),
+        label_fill: tuple[int, int, int] | None = None,
+        value_fill: tuple[int, int, int] | None = None,
+    ) -> "Canvas":
+        """Draw one compact, two-column information row."""
+
+        active_label_width = min(width, max(1, label_width))
+        self.panel(
+            x=x,
+            y=y,
+            width=width,
+            height=height,
+            fill=fill,
+            outline=outline,
+            radius=8,
+        )
+        divider_x = x + active_label_width
+        self.draw.line(
+            (divider_x, y + 7, divider_x, y + height - 7),
+            fill=outline,
+            width=1,
+        )
+        self._center_text_in_box(
+            str(label),
+            x=x,
+            y=y,
+            width=active_label_width,
+            height=height,
+            fill=label_fill or self.theme.text,
+            font=self.small_font,
+        )
+        self._center_text_in_box(
+            str(value),
+            x=divider_x,
+            y=y,
+            width=max(1, width - active_label_width),
+            height=height,
+            fill=value_fill or self.theme.text,
+            font=self.small_font,
+        )
+        return self
+
+    def page_indicator(
+        self,
+        index: int,
+        count: int,
+        *,
+        y: int,
+        radius: int = 5,
+        gap: int = 12,
+        active_fill: tuple[int, int, int] | None = None,
+        inactive_fill: tuple[int, int, int] = (126, 132, 138),
+    ) -> "Canvas":
+        """Draw centered pagination dots."""
+
+        if count <= 0:
+            return self
+        active_index = min(count - 1, max(0, int(index)))
+        diameter = radius * 2
+        total_width = count * diameter + (count - 1) * gap
+        start_x = (self.width - total_width) // 2 + radius
+        selected_fill = active_fill or self.theme.button_selected
+        for item_index in range(count):
+            center_x = start_x + item_index * (diameter + gap)
+            bounds = (
+                center_x - radius,
+                y - radius,
+                center_x + radius,
+                y + radius,
+            )
+            if item_index == active_index:
+                self.draw.ellipse(bounds, fill=selected_fill)
+            else:
+                self.draw.ellipse(bounds, outline=inactive_fill, width=2)
+        return self
+
     def text_page(
         self,
         title: str,
@@ -512,9 +684,16 @@ class Canvas:
     def render(self) -> bytes:
         return image_to_rgb565_be(self.image)
 
-    async def present(self, frame: Any) -> dict[str, Any]:
+    async def present(
+        self,
+        frame: Any,
+        *,
+        input_timestamp_ms: int | None = None,
+    ) -> dict[str, Any]:
         frame.write(self.render())
-        return await frame.commit()
+        if input_timestamp_ms is None:
+            return await frame.commit()
+        return await frame.commit(input_timestamp_ms=input_timestamp_ms)
 
     def wrap(
         self,

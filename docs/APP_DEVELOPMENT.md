@@ -10,8 +10,8 @@ Use one of these two paths before creating an application:
 
 | Application type | Use it for | Rendering approach |
 |---|---|---|
-| Toolkit app | status pages, controls, forms, text, chat, and translation | `lafvin_hat.ui.Canvas` |
-| Custom Raw Frame app | games, video, animation, and other frame-sensitive work | write RGB565 frame bytes directly |
+| Toolkit app | status pages, controls, text, chat, and lightweight animation | `lafvin_hat.ui.Canvas` |
+| Custom Raw Frame app | video and work that needs measured byte-level control | write RGB565 frame bytes directly |
 
 All first-party foreground applications use the `display.raw_frame`
 permission. A toolkit app is still a Raw Frame app: the toolkit draws an
@@ -19,8 +19,9 @@ RGB565 frame, and Runtime presents that finished frame. It does not introduce
 another Runtime UI mode.
 
 Use the Toolkit by default. Use custom drawing only when its lower-level
-control is genuinely useful; `one_button_jump` and `video_player` are the reference
-examples.
+control is genuinely useful. `one_button_jump` is the reference for an App-owned
+game loop rendered through Toolkit Canvas; `video_player` is the byte-level Raw
+Frame reference.
 
 ## Application Directory
 
@@ -37,8 +38,10 @@ Start from the closest first-party application:
 
 - `apps/system_status` for a periodically refreshed Toolkit page
 - `apps/system_volume` for a simple button-controlled Toolkit page
+- `apps/chatbot` for a cached Toolkit bitmap status layout with streaming text
 - `apps/translator` for push-to-talk, audio, AI, and Toolkit rendering
-- `apps/one_button_jump` for custom Raw Frame animation
+- `apps/one_button_jump` for a Toolkit-rendered game with low-latency input
+- `apps/rgb_led` for RGB LED control with a cleared screen
 
 Use a unique reverse-domain application ID in `manifest.yaml`. An interactive
 Toolkit application normally needs `display.raw_frame` and `button`
@@ -84,7 +87,7 @@ backend flag for the local simulator:
 lafvin-hat runtime start --env-file .env --backend lafvin-hat
 ```
 
-Runtime refreshes the six bundled first-party Apps before it starts listening.
+Runtime refreshes the seven bundled first-party Apps before it starts listening.
 On a fresh development data directory they appear on Home automatically;
 manual installation remains for third-party or local test Apps.
 

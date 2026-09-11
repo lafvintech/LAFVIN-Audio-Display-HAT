@@ -2,12 +2,29 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 
 @dataclass(frozen=True, slots=True)
 class Message:
     role: str
     content: str
+    tool_calls: tuple["ToolCall", ...] = ()
+    tool_call_id: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ToolDefinition:
+    name: str
+    description: str
+    parameters: dict[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
+class ToolCall:
+    call_id: str
+    name: str
+    arguments: dict[str, Any]
 
 
 @dataclass(frozen=True, slots=True)

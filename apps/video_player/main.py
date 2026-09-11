@@ -18,11 +18,9 @@ WIDTH = 240
 HEIGHT = 280
 TARGET_FPS = 30
 ASSETS_VIDEO_RELATIVE_PATH = Path("assets") / "videos"
-VIDEO_FILENAME = "test.mp4"
-
-
-def resolve_video_file(*, project_root: Path | None = None) -> Path:
-    return resolve_video_directory(project_root=project_root) / VIDEO_FILENAME
+SUPPORTED_VIDEO_SUFFIXES = frozenset(
+    {".mp4", ".mov", ".mkv", ".webm", ".avi"}
+)
 
 
 def resolve_video_directory(*, project_root: Path | None = None) -> Path:
@@ -33,6 +31,28 @@ def resolve_video_directory(*, project_root: Path | None = None) -> Path:
         if candidate.is_dir():
             return candidate
     return _source_project_root() / ASSETS_VIDEO_RELATIVE_PATH
+
+
+def discover_video_files(*, project_root: Path | None = None) -> list[Path]:
+    directory = resolve_video_directory(project_root=project_root)
+    if not directory.is_dir():
+        return []
+    return sorted(
+        (
+            path
+            for path in directory.iterdir()
+            if path.is_file()
+            and not path.name.startswith(".")
+            and path.suffix.lower() in SUPPORTED_VIDEO_SUFFIXES
+        ),
+        key=lambda path: (path.name.casefold(), path.name),
+    )
+
+
+def next_selection(selected: int, item_count: int) -> int:
+    if item_count <= 0:
+        return 0
+    return (selected + 1) % item_count
 
 
 def build_ffmpeg_cmd(
@@ -104,41 +124,169 @@ def render_message_frame(
     return _image_to_rgb565_be(image)
 
 
+def render_selector_frame(
+    videos: list[Path],
+    selected: int,
+    *,
+    width: int = WIDTH,
+    height: int = HEIGHT,
+) -> bytes:
+    image = Image.new("RGB", (width, height), (10, 12, 18))
+    draw = ImageDraw.Draw(image)
+    title_font = load_ui_font(22, bold=True)
+    item_font = load_ui_font(16)
+    selected_font = load_ui_font(16, bold=True)
+    hint_font = load_ui_font(13)
+
+    draw.text((14, 14), "Video Player", fill=(255, 255, 255), font=title_font)
+    counter = f"{selected + 1} / {len(videos)}" if videos else "0 / 0"
+    counter_width = draw.textlength(counter, font=hint_font)
+    draw.text(
+        (width - 14 - counter_width, 21),
+        counter,
+        fill=(170, 177, 190),
+        font=hint_font,
+    )
+    draw.line((14, 50, width - 14, 50), fill=(70, 76, 92), width=1)
+
+    for row, index in enumerate(_visible_video_indices(len(videos), selected)):
+        y = 64 + row * 45
+        is_selected = index == selected
+        if is_selected:
+            draw.rounded_rectangle(
+                (12, y, width - 12, y + 36),
+                radius=8,
+                fill=(104, 72, 214),
+            )
+            draw.polygon(
+                ((24, y + 11), (24, y + 25), (35, y + 18)),
+                fill=(255, 255, 255),
+            )
+        else:
+            draw.rounded_rectangle(
+                (12, y, width - 12, y + 36),
+                radius=8,
+                outline=(54, 60, 76),
+                width=1,
+            )
+        name = _ellipsize(videos[index].name, 22)
+        draw.text(
+            (44, y + 8),
+            name,
+            fill=(255, 255, 255) if is_selected else (170, 177, 190),
+            font=selected_font if is_selected else item_font,
+        )
+
+    draw.line((14, height - 68, width - 14, height - 68), fill=(70, 76, 92), width=1)
+    hints = (
+        ("Single click", "Next video"),
+        ("Double click", "Play"),
+        ("Triple click", "Home"),
+    )
+    for index, (gesture, action) in enumerate(hints):
+        y = height - 61 + index * 18
+        draw.text((16, y), gesture, fill=(142, 116, 238), font=hint_font)
+        action_width = draw.textlength(action, font=hint_font)
+        draw.text(
+            (width - 16 - action_width, y),
+            action,
+            fill=(190, 196, 207),
+            font=hint_font,
+        )
+    return _image_to_rgb565_be(image)
+
+
 async def main() -> None:
     app = await DeviceApp.connect_from_environment()
     await app.acquire_foreground()
     frame = await app.frames.acquire()
     stop_event = asyncio.Event()
-    events = app.subscribe(events=["app.exit_requested"])
-    event_task = asyncio.create_task(_watch_exit(events, stop_event))
+    playback_stop_event = asyncio.Event()
+    command_queue: asyncio.Queue[str] = asyncio.Queue()
+    selection_active = asyncio.Event()
+    selection_active.set()
+    events = app.subscribe(
+        events=[
+            "button.single_clicked",
+            "button.double_clicked",
+            "app.exit_requested",
+        ]
+    )
+    event_task = asyncio.create_task(
+        _watch_events(
+            events,
+            command_queue,
+            stop_event,
+            selection_active,
+            playback_stop_event,
+        ),
+        name="video-player-events",
+    )
 
     try:
-        video_path = resolve_video_file()
-        if not video_path.is_file():
+        videos = discover_video_files()
+        if not videos:
+            selection_active.clear()
             await _show_message(
                 frame,
-                "Video Missing",
+                "No Videos",
                 [
-                    "Expected file:",
-                    str(video_path),
-                    "Edit VIDEO_FILENAME in",
-                    "apps/video_player/main.py",
-                    "to use another file.",
+                    "Add a video file to:",
+                    "assets/videos/",
+                    "Supported:",
+                    "MP4 MOV MKV WEBM AVI",
+                    "Triple-click: Home",
                 ],
             )
             await stop_event.wait()
             return
         if shutil.which("ffmpeg") is None:
+            selection_active.clear()
             await _show_message(
                 frame,
                 "ffmpeg Missing",
-                ["Install ffmpeg to play video.", str(video_path.name)],
+                ["Install ffmpeg to play video.", "Triple-click: Home"],
             )
             await stop_event.wait()
             return
 
-        print(f"[VideoPlayer] playing {video_path}", flush=True)
-        await _play_loop(frame, video_path, stop_event)
+        selected = 0
+        await _show_selector(frame, videos, selected)
+        while not stop_event.is_set():
+            command = await _next_command(command_queue, stop_event)
+            if command is None:
+                break
+            if command == "button.single_clicked":
+                selected = next_selection(selected, len(videos))
+                await _show_selector(frame, videos, selected)
+                continue
+            if command != "button.double_clicked":
+                continue
+
+            video_path = videos[selected]
+            playback_stop_event.clear()
+            selection_active.clear()
+            print(f"[VideoPlayer] playing {video_path}", flush=True)
+            try:
+                await _play_video(
+                    frame,
+                    video_path,
+                    stop_event,
+                    playback_stop_event,
+                )
+            except Exception as exc:
+                print(f"[VideoPlayer] playback error: {exc}", flush=True)
+                if not stop_event.is_set():
+                    await _show_message(
+                        frame,
+                        "Playback Error",
+                        [_ellipsize(video_path.name, 24), str(exc)],
+                    )
+                    await asyncio.sleep(1.5)
+            finally:
+                selection_active.set()
+            if not stop_event.is_set():
+                await _show_selector(frame, videos, selected)
     except Exception as exc:
         print(f"[VideoPlayer] error: {exc}", flush=True)
         with contextlib.suppress(Exception):
@@ -153,11 +301,28 @@ async def main() -> None:
         await app.close()
 
 
-async def _watch_exit(events: object, stop_event: asyncio.Event) -> None:
+async def _watch_events(
+    events: object,
+    command_queue: asyncio.Queue[str],
+    stop_event: asyncio.Event,
+    selection_active: asyncio.Event,
+    playback_stop_event: asyncio.Event,
+) -> None:
     async for event in events:  # type: ignore[attr-defined]
-        if event["event"] == "app.exit_requested":
+        name = event["event"]
+        if name == "app.exit_requested":
             stop_event.set()
+            playback_stop_event.set()
             return
+        if selection_active.is_set():
+            if name in {
+                "button.single_clicked",
+                "button.double_clicked",
+            }:
+                command_queue.put_nowait(name)
+            continue
+        if name == "button.single_clicked":
+            playback_stop_event.set()
 
 
 async def _show_message(
@@ -169,77 +334,123 @@ async def _show_message(
     await frame.commit()
 
 
-async def _play_loop(
+async def _show_selector(
     frame: RawFrameSession,
-    video_path: Path,
-    stop_event: asyncio.Event,
+    videos: list[Path],
+    selected: int,
 ) -> None:
-    frame_interval = 1 / max(1, int(os.getenv("LAFVIN_VIDEO_FPS", TARGET_FPS)))
-    while not stop_event.is_set():
-        cmd = build_ffmpeg_cmd(video_path, fps=int(round(1 / frame_interval)))
-        process = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        audio_process: asyncio.subprocess.Process | None = None
-        frame_count = 0
-        next_frame_at = time.monotonic()
-        try:
-            assert process.stdout is not None
-            while not stop_event.is_set():
-                try:
-                    data = await _read_frame_or_stop(
-                        process.stdout,
-                        frame.size,
-                        stop_event,
-                    )
-                except asyncio.IncompleteReadError:
-                    break
-                if data is None:
-                    break
-                frame.write(data)
-                await frame.commit()
-                if frame_count == 0:
-                    audio_process = await _start_audio(video_path)
-                frame_count += 1
-                next_frame_at += frame_interval
-                delay = next_frame_at - time.monotonic()
-                if delay > 0:
-                    await asyncio.sleep(delay)
-                else:
-                    next_frame_at = time.monotonic()
-        finally:
-            force = stop_event.is_set()
-            await _stop_process(process, force=force)
-            await _stop_process(audio_process, force=force)
-
-        if stop_event.is_set():
-            return
-        if frame_count == 0:
-            stderr = b""
-            if process.stderr is not None:
-                with contextlib.suppress(Exception):
-                    stderr = await process.stderr.read()
-            message = stderr.decode("utf-8", errors="replace").strip()
-            raise RuntimeError(message or "ffmpeg produced no frames")
+    frame.write(render_selector_frame(videos, selected))
+    await frame.commit()
 
 
-async def _read_frame_or_stop(
-    stream: asyncio.StreamReader,
-    size: int,
+async def _next_command(
+    command_queue: asyncio.Queue[str],
     stop_event: asyncio.Event,
-) -> bytes | None:
-    read_task = asyncio.create_task(stream.readexactly(size))
+) -> str | None:
+    command_task = asyncio.create_task(command_queue.get())
     stop_task = asyncio.create_task(stop_event.wait())
     done, pending = await asyncio.wait(
-        {read_task, stop_task},
+        {command_task, stop_task},
         return_when=asyncio.FIRST_COMPLETED,
     )
     for task in pending:
         task.cancel()
     await asyncio.gather(*pending, return_exceptions=True)
     if stop_task in done:
+        return None
+    return command_task.result()
+
+
+async def _play_video(
+    frame: RawFrameSession,
+    video_path: Path,
+    stop_event: asyncio.Event,
+    playback_stop_event: asyncio.Event,
+) -> None:
+    while not stop_event.is_set() and not playback_stop_event.is_set():
+        await _play_video_once(
+            frame,
+            video_path,
+            stop_event,
+            playback_stop_event,
+        )
+
+
+async def _play_video_once(
+    frame: RawFrameSession,
+    video_path: Path,
+    stop_event: asyncio.Event,
+    playback_stop_event: asyncio.Event,
+) -> None:
+    frame_interval = 1 / max(1, int(os.getenv("LAFVIN_VIDEO_FPS", TARGET_FPS)))
+    cmd = build_ffmpeg_cmd(video_path, fps=int(round(1 / frame_interval)))
+    process = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    audio_process: asyncio.subprocess.Process | None = None
+    frame_count = 0
+    next_frame_at = time.monotonic()
+    try:
+        assert process.stdout is not None
+        while not stop_event.is_set():
+            try:
+                data = await _read_frame_or_stop(
+                    process.stdout,
+                    frame.size,
+                    stop_event,
+                    playback_stop_event,
+                )
+            except asyncio.IncompleteReadError:
+                break
+            if data is None:
+                break
+            frame.write(data)
+            await frame.commit()
+            if frame_count == 0:
+                audio_process = await _start_audio(video_path)
+            frame_count += 1
+            next_frame_at += frame_interval
+            delay = next_frame_at - time.monotonic()
+            if delay > 0:
+                await asyncio.sleep(delay)
+            else:
+                next_frame_at = time.monotonic()
+    finally:
+        force = stop_event.is_set() or playback_stop_event.is_set()
+        await _stop_process(process, force=force)
+        await _stop_process(audio_process, force=force)
+
+    if stop_event.is_set() or playback_stop_event.is_set():
+        return
+    if frame_count == 0:
+        stderr = b""
+        if process.stderr is not None:
+            with contextlib.suppress(Exception):
+                stderr = await process.stderr.read()
+        message = stderr.decode("utf-8", errors="replace").strip()
+        raise RuntimeError(message or "ffmpeg produced no frames")
+
+
+async def _read_frame_or_stop(
+    stream: asyncio.StreamReader,
+    size: int,
+    *stop_events: asyncio.Event,
+) -> bytes | None:
+    read_task = asyncio.create_task(stream.readexactly(size))
+    stop_tasks = {
+        asyncio.create_task(stop_event.wait())
+        for stop_event in stop_events
+    }
+    done, pending = await asyncio.wait(
+        {read_task, *stop_tasks},
+        return_when=asyncio.FIRST_COMPLETED,
+    )
+    for task in pending:
+        task.cancel()
+    await asyncio.gather(*pending, return_exceptions=True)
+    if any(stop_task in done for stop_task in stop_tasks):
         return None
     return read_task.result()
 
@@ -329,6 +540,24 @@ def _wrap(text: str, width: int) -> list[str]:
     if current:
         lines.append(current)
     return lines or [""]
+
+
+def _visible_video_indices(item_count: int, selected: int) -> list[int]:
+    if item_count <= 0:
+        return []
+    if item_count <= 3:
+        return list(range(item_count))
+    return [
+        (selected - 1) % item_count,
+        selected,
+        (selected + 1) % item_count,
+    ]
+
+
+def _ellipsize(text: str, limit: int) -> str:
+    if len(text) <= limit:
+        return text
+    return f"{text[:max(1, limit - 3)]}..."
 
 
 def _image_to_rgb565_be(image: Image.Image) -> bytes:

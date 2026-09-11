@@ -1,8 +1,8 @@
 schema_version: 1
 id: dev.lafvin.video-player
 name: Video Player
-version: 0.1.0
-description: V2-M5 standalone MP4 and local video playback trial
+version: 0.2.2
+description: Selectable local video playback with single-button navigation
 
 entrypoint:
   executable: python

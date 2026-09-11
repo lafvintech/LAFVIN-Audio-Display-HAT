@@ -1,10 +1,13 @@
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from pathlib import Path
 from typing import Protocol
 
-from .models import AudioResult, LLMChunk, Message
+from .models import AudioResult, LLMChunk, Message, ToolCall, ToolDefinition
+
+
+ToolExecutor = Callable[[ToolCall], Awaitable[str]]
 
 
 class ASRProvider(Protocol):
@@ -15,6 +18,9 @@ class LLMProvider(Protocol):
     def stream_chat(
         self,
         messages: list[Message],
+        *,
+        tools: Sequence[ToolDefinition] = (),
+        tool_executor: ToolExecutor | None = None,
     ) -> AsyncIterator[LLMChunk]: ...
 
 

@@ -13,6 +13,9 @@ from .metrics import DisplayMetrics
 
 
 _INDEX_PATH = Path(__file__).with_name("simulator_index.html")
+_SIMULATED_CLICK_PRESS_SEC = 0.04
+_SIMULATED_CLICK_GAP_SEC = 0.04
+_SIMULATED_GESTURE_SETTLE_SEC = 0.18
 
 
 class SimulatorBackend:
@@ -34,6 +37,7 @@ class SimulatorBackend:
         self._event_sink: DeviceEventSink | None = None
         self._web_server: asyncio.AbstractServer | None = None
         self._button_pressed = False
+        self._button_injection_lock = asyncio.Lock()
         self._backlight = 100
         self._led = (0, 0, 0)
         self._battery = BatteryState(level=100, charging=False)
@@ -115,6 +119,26 @@ class SimulatorBackend:
         self._display_mode = mode
 
     async def inject_button(self, pressed: bool) -> None:
+        async with self._button_injection_lock:
+            await self._set_button_state(pressed)
+
+    async def inject_clicks(self, click_count: int) -> None:
+        if isinstance(click_count, bool) or click_count not in {1, 2, 3}:
+            raise ValueError("clicks must be 1, 2, or 3")
+        async with self._button_injection_lock:
+            if self._button_pressed:
+                raise ValueError("Cannot inject clicks while the button is pressed")
+            for index in range(click_count):
+                await self._set_button_state(True)
+                await asyncio.sleep(_SIMULATED_CLICK_PRESS_SEC)
+                await self._set_button_state(False)
+                if index + 1 < click_count:
+                    await asyncio.sleep(_SIMULATED_CLICK_GAP_SEC)
+            # Let the Runtime's click-interval timer publish single and double
+            # clicks before another shortcut sequence can begin.
+            await asyncio.sleep(_SIMULATED_GESTURE_SETTLE_SEC)
+
+    async def _set_button_state(self, pressed: bool) -> None:
         pressed = bool(pressed)
         if pressed == self._button_pressed:
             return
@@ -267,6 +291,14 @@ class SimulatorBackend:
         if method == "POST" and path == "/api/button":
             payload = self._decode_json_object(body)
             await self.inject_button(bool(payload.get("pressed")))
+            await self._send_json(writer, 200, self.state_snapshot())
+            return
+        if method == "POST" and path == "/api/gesture":
+            payload = self._decode_json_object(body)
+            clicks = payload.get("clicks")
+            if isinstance(clicks, bool) or not isinstance(clicks, int):
+                raise ValueError("clicks must be an integer")
+            await self.inject_clicks(clicks)
             await self._send_json(writer, 200, self.state_snapshot())
             return
         if method == "POST" and path == "/api/state":

@@ -776,6 +776,12 @@ class RuntimeServer:
         self,
         request: Request,
     ) -> dict[str, Any]:
+        await self._app_manager.authorize(
+            self._required_string(request, "app_id"),
+            self._required_string(request, "session_token"),
+            permission="led",
+            require_foreground=True,
+        )
         await self.backend.set_led(
             self._required_integer(request, "r"),
             self._required_integer(request, "g"),

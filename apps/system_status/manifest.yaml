@@ -1,8 +1,8 @@
 schema_version: 1
 id: dev.lafvin.system-status
 name: System Status
-version: 0.1.0
-description: Runtime, device, network, temperature, app, and storage status
+version: 0.2.1
+description: Two-page device monitor with resource usage and system information
 
 entrypoint:
   executable: python

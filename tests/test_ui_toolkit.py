@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 
 import lafvin_hat.ui.toolkit as toolkit_module
+import pytest
+from PIL import Image
 from lafvin_hat.ui import Canvas, ChatMessage, StatusRow, image_to_rgb565_be
 
 
@@ -13,12 +15,14 @@ class FakeFrame:
     def __init__(self) -> None:
         self.data = b""
         self.commits = 0
+        self.input_timestamp_ms: int | None = None
 
     def write(self, frame: bytes) -> None:
         self.data = frame
 
-    async def commit(self) -> dict:
+    async def commit(self, *, input_timestamp_ms: int | None = None) -> dict:
         self.commits += 1
+        self.input_timestamp_ms = input_timestamp_ms
         return {"next_sequence": self.commits + 1}
 
 
@@ -254,9 +258,117 @@ def test_canvas_present_writes_and_commits_frame() -> None:
     asyncio.run(scenario())
 
 
+def test_canvas_present_forwards_input_timestamp() -> None:
+    async def scenario() -> None:
+        fake = FakeFrame()
+
+        await Canvas().present(fake, input_timestamp_ms=1234)
+
+        assert fake.input_timestamp_ms == 1234
+
+    asyncio.run(scenario())
+
+
 def test_image_to_rgb565_be_uses_big_endian_order() -> None:
     from PIL import Image
 
     image = Image.new("RGB", (1, 1), (255, 0, 0))
 
     assert image_to_rgb565_be(image) == bytes([0xF8, 0x00])
+
+
+def test_progress_ring_draws_track_and_clamped_progress() -> None:
+    canvas = Canvas(width=100, height=100)
+    accent = (145, 91, 220)
+    track = (210, 210, 210)
+
+    canvas.progress_ring(
+        1.5,
+        center_x=50,
+        center_y=50,
+        radius=25,
+        color=accent,
+        track_color=track,
+        width=5,
+    )
+
+    colors = set(canvas.image.getdata())
+    assert accent in colors
+    assert track not in colors
+
+    partial_canvas = Canvas(width=100, height=100)
+    partial_canvas.progress_ring(
+        0.5,
+        center_x=50,
+        center_y=50,
+        radius=25,
+        color=accent,
+        track_color=track,
+        width=5,
+    )
+
+    partial_colors = set(partial_canvas.image.getdata())
+    assert accent in partial_colors
+    assert track in partial_colors
+
+
+def test_bitmap_resizes_and_preserves_transparency() -> None:
+    source = Image.new("RGBA", (8, 8), (255, 0, 0, 0))
+    for x in range(2, 6):
+        for y in range(2, 6):
+            source.putpixel((x, y), (145, 91, 220, 255))
+
+    canvas = Canvas(width=40, height=40).bitmap(
+        source,
+        center_x=20,
+        top=8,
+        size=24,
+    )
+
+    assert canvas.image.getpixel((8, 8)) == canvas.theme.background
+    center = canvas.image.getpixel((20, 20))
+    assert center != canvas.theme.background
+    assert center[2] > center[0] > center[1]
+
+
+def test_bitmap_rejects_non_positive_size() -> None:
+    source = Image.new("RGBA", (8, 8), (255, 255, 255, 255))
+
+    with pytest.raises(ValueError, match="greater than zero"):
+        Canvas(width=40, height=40).bitmap(
+            source,
+            center_x=20,
+            top=8,
+            size=0,
+        )
+
+
+def test_key_value_row_honors_label_and_value_colors() -> None:
+    canvas = Canvas(width=240, height=280)
+    label_fill = (0, 0, 0)
+    value_fill = (80, 20, 120)
+
+    canvas.key_value_row(
+        "CPU",
+        "34%",
+        x=8,
+        y=50,
+        width=224,
+        height=34,
+        label_fill=label_fill,
+        value_fill=value_fill,
+    )
+
+    label_area = canvas.image.crop((8, 50, 80, 84))
+    value_area = canvas.image.crop((80, 50, 232, 84))
+    assert label_fill in set(label_area.getdata())
+    assert value_fill in set(value_area.getdata())
+
+
+def test_page_indicator_centers_and_selects_one_dot() -> None:
+    canvas = Canvas(width=240, height=280)
+
+    canvas.page_indicator(1, 2, y=262)
+
+    assert canvas.image.getpixel((109, 262)) == canvas.theme.background
+    assert canvas.image.getpixel((131, 262)) == canvas.theme.button_selected

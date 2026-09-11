@@ -37,15 +37,22 @@ apps:
     implementation: toolkit
 
   - id: dev.lafvin.jump
-    name: One Button Jump
+    name: Dino Runner
     source: apps/one_button_jump
     provisioning: bundled
     home_order: 5
-    implementation: custom-raw-frame
+    implementation: toolkit
 
   - id: dev.lafvin.video-player
     name: Video Player
     source: apps/video_player
     provisioning: bundled
     home_order: 6
+    implementation: custom-raw-frame
+
+  - id: dev.lafvin.rgb-led
+    name: RGB LED
+    source: apps/rgb_led
+    provisioning: bundled
+    home_order: 7
     implementation: custom-raw-frame
