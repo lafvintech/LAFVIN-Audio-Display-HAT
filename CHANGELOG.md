@@ -5,8 +5,15 @@ remain independent from the Runtime package version.
 
 ## Unreleased
 
+## 0.3.0b4 - 2026-09-10
+
+Fourth public beta focused on application experience, simulator fidelity,
+device-aware AI capabilities, and more reliable streaming speech.
+
 ### Added
 
+- A new RGB LED App provides a continuous rainbow gradient, selectable palette
+  colors, and one-button navigation. Its initial App version is `0.1.0`.
 - AI Chatbot adds native LLM Tool Calling for four allowlisted device actions:
   reading selected system status, reading or setting speaker volume, and
   setting the RGB light. OpenAI-compatible and Anthropic message formats are
@@ -29,7 +36,7 @@ remain independent from the Runtime package version.
 - AI Chatbot device writes remain Runtime-owned; RGB control now carries the
   App session and requires the foreground `led` permission. Device tools can be
   disabled with `LAFVIN_CHATBOT_TOOLS_ENABLED=0`, and the App reports version
-  `0.3.1`.
+  `0.3.1`, upgraded from `0.2.0`.
 - AI Chatbot keeps streaming its first complete sentence quickly, combines
   later short sentences into bounded medium TTS chunks, and starts Runtime
   playback without waiting for long-text display layout.
@@ -39,16 +46,16 @@ remain independent from the Runtime package version.
 - The stable `dev.lafvin.jump` App is now named Dino Runner, uses a reusable
   Toolkit Canvas while retaining immediate raw-press jumping, retries on a
   Game Over single-click, uses a taller and longer jump arc, and reports App
-  version `0.3.1`.
+  version `0.3.1`, upgraded from One Button Jump `0.2.0`.
 - Toolkit Canvas presentation can forward an input timestamp so animated Apps
   retain Runtime frame-latency metrics without bypassing Toolkit presentation.
 - System Status opens on System Monitor, switches pages on single-click, uses
   a purple storage accent and black Device Info labels, and returns Home on
-  triple-click. Its App version is `0.2.1`.
+  triple-click. Its App version is `0.2.1`, upgraded from `0.1.0`.
 - Video Player selects the next file on single-click and starts it on
   double-click. During playback, single-click returns to selection,
   double-click is ignored, triple-click returns Home, and natural completion
-  loops the selected video. Its App version is `0.2.2`.
+  loops the selected video. Its App version is `0.2.2`, upgraded from `0.1.0`.
 - The Web Simulator now renders Runtime pages and every App through one native
   240x280 RGB565 Canvas, checks animated frames at up to 30 FPS, and uses a
   smooth device-pixel-ratio-aware HiDPI backing store.
@@ -64,7 +71,7 @@ remain independent from the Runtime package version.
 - The simulator Canvas content area now matches the hardware's full 240x280
   display instead of using an inset size.
 
-## 0.3.0b3 - 2026-08-25
+## 0.3.0b3 - 2026-08-26
 
 Third public beta with expanded Raspberry Pi compatibility and deployment
 refinements.
@@ -88,11 +95,6 @@ refinements.
   Provider-specific environment variables, allowing every Provider's settings
   to coexist without overriding the selected service.
 - Voice Translator manifest version is now `0.1.1`.
-- System Status now labels the temperature card `TEMP °C` and drops the
-  degree suffix from the value itself, so the unit reads next to the label
-  instead of after every reading. System Status manifest version is now
-  `0.2.1`.
-
 ### Removed
 
 - The shared `LAFVIN_AI_PROVIDER` and Provider-owned `LAFVIN_ASR_*`,

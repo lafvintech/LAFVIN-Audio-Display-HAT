@@ -30,7 +30,7 @@ paths continue to use the `lafvin-hat` or `lafvin_hat` identifier.
 
 ## Release and License
 
-The current public prerelease is `0.3.0b3`.
+The current public prerelease is `0.3.0b4`.
 
 Except where a component-specific notice states otherwise, source code and
 project-created test media are licensed under the
