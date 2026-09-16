@@ -1,6 +1,6 @@
 .. _appendix:
 
-Appendices
+Appendix
 ==========================
 
 .. toctree::
@@ -9,4 +9,3 @@ Appendices
    troubleshooting
    update_and_recovery
    uninstall
-   release_checklist
