@@ -1,0 +1,98 @@
+.. _project-architecture:
+
+1. Understand the Project Architecture
+======================================
+
+LAFVIN Audio Display HAT uses a structure built around one Runtime, multiple
+applications, and interchangeable device backends. The Runtime manages the
+display, button, RGB LED, backlight, audio, application lifecycles, and
+application data. Applications request these capabilities through the SDK
+instead of accessing GPIO, SPI, ALSA, or the framebuffer directly.
+
+Core Data Flow
+--------------
+
+.. code-block:: text
+
+   Application (manifest.yaml + main.py)
+                 │
+                 │ DeviceApp / IPC
+                 ▼
+   Runtime (applications, frames, audio, status, and lifecycles)
+                 │
+                 │ DeviceBackend
+          ┌──────┴──────┐
+          ▼             ▼
+      Web Simulator   LAFVIN HAT hardware
+
+The simulator and hardware backends share the same Runtime, application
+lifecycle, and frame protocol. Applications built with the UI Toolkit generate
+240×280 RGB565 frames, which the active device backend then displays. You do
+not need to create separate interfaces for the simulator and the hardware.
+
+Main Directories
+----------------
+
+.. list-table::
+   :header-rows: 1
+   :widths: 35 65
+
+   * - Path
+     - Purpose
+   * - ``src/lafvin_hat/runtime/``
+     - Runtime service, application management, IPC, audio, frames, and device backends
+   * - ``src/lafvin_hat/sdk/``
+     - ``DeviceApp``, frame, audio, and event interfaces used by applications
+   * - ``src/lafvin_hat/ui/``
+     - UI Toolkit, themes, text layout, and RGB565 conversion
+   * - ``src/lafvin_hat/ai/``
+     - ASR, LLM, and TTS Providers and their configuration
+   * - ``apps/``
+     - Built-in applications and example application directories
+   * - ``assets/``
+     - Shared resources such as fonts, images, audio, and video
+   * - ``hardware/``
+     - LAFVIN HAT and WM8960 hardware configuration
+   * - ``deploy/``
+     - Raspberry Pi systemd deployment and removal scripts
+   * - ``tests/``
+     - Automated tests for the Runtime, SDK, Providers, and applications
+
+Application Directory
+---------------------
+
+An application contains at least a manifest and a Python entrypoint:
+
+.. code-block:: text
+
+   apps/my_app/
+   ├── manifest.yaml
+   ├── main.py
+   └── README.md       # Recommended
+
+``manifest.yaml`` declares the application ID, entrypoint, permissions, UI
+mode, and lifecycle. ``main.py`` connects to the Runtime through ``DeviceApp``.
+The application must be started by the Runtime. Do not execute ``main.py``
+directly because the Runtime supplies environment variables such as the IPC
+endpoint and application identity during startup.
+
+Choose a Display Development Method
+-----------------------------------
+
+.. list-table::
+   :header-rows: 1
+   :widths: 25 40 35
+
+   * - Type
+     - Best suited for
+     - Reference applications
+   * - UI Toolkit
+     - Status pages, settings, text, chat, and lightweight animations
+     - ``system_status``, ``system_volume``, ``chatbot``
+   * - Custom Raw Frame
+     - Video or content that requires byte-level control and precise frame rates
+     - ``video_player``
+
+New applications should use ``lafvin_hat.ui.Canvas`` whenever possible.
+Generate Raw Frames directly only when measured performance or media
+requirements cannot be met by the Toolkit.

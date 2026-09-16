@@ -1,0 +1,265 @@
+/*
+ * LAFVIN documentation typography and reading layout.
+ * HarmonyOS Sans SC is used for the documentation interface and content.
+ */
+
+@font-face {
+  font-family: "HarmonyOS Sans SC";
+  src: url("HarmonyOS_Sans_SC.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+:root {
+  --lafvin-font-sans: "HarmonyOS Sans SC", "HarmonyOS Sans", "Noto Sans SC",
+    "Microsoft YaHei", "Segoe UI", Arial, sans-serif;
+  --lafvin-content-width: 1100px;
+  --lafvin-reading-width: 900px;
+  --lafvin-body-font-size: 18px;
+  --lafvin-body-line-height: 1.75;
+  --lafvin-body-letter-spacing: 0.018em;
+  --lafvin-body-color: #30343b;
+  --lafvin-body-font-weight: 450;
+  --lafvin-paragraph-spacing: 18px;
+  --lafvin-h1-background: #287fb8;
+  --lafvin-h1-color: #fff;
+  --lafvin-h1-font-size: 40px;
+  --lafvin-h1-line-height: 1.2;
+  --lafvin-h1-padding-y: 18px;
+  --lafvin-h1-padding-x: 28px;
+  --lafvin-h1-spacing-after: 40px;
+  --lafvin-h2-line-height: 1.3;
+  --lafvin-h2-spacing-before: 48px;
+  --lafvin-h2-spacing-after: 16px;
+  --lafvin-admonition-line-height: 1.6;
+  --lafvin-sidebar-caption-font-size: 17px;
+  --lafvin-sidebar-font-size: 15.5px;
+  --lafvin-sidebar-nested-font-size: 14.5px;
+  --lafvin-sidebar-line-height: 1.45;
+  --lafvin-code-font-size: 15.5px;
+  --lafvin-code-line-height: 1.55;
+  --lafvin-code-padding-y: 14px;
+  --lafvin-code-padding-x: 16px;
+  --lafvin-code-spacing-after: 30px;
+  --lafvin-table-font-size: 18px;
+  --lafvin-table-line-height: 1.65;
+}
+
+body,
+button,
+input,
+select,
+textarea {
+  font-family: var(--lafvin-font-sans);
+}
+
+/* Improve navigation readability while preserving the hierarchy indentation. */
+.wy-menu-vertical p.caption {
+  margin-top: 18px;
+  margin-bottom: 6px;
+  height: auto;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  font-size: var(--lafvin-sidebar-caption-font-size);
+  line-height: 1.4;
+  letter-spacing: 0.035em;
+}
+
+.wy-menu-vertical li.toctree-l1 > a,
+.wy-menu-vertical li.toctree-l2 > a {
+  padding-top: 7px;
+  padding-bottom: 7px;
+  font-size: var(--lafvin-sidebar-font-size);
+  line-height: var(--lafvin-sidebar-line-height);
+}
+
+.wy-menu-vertical li.toctree-l3 > a,
+.wy-menu-vertical li.toctree-l4 > a,
+.wy-menu-vertical li.toctree-l5 > a,
+.wy-menu-vertical li.toctree-l6 > a {
+  padding-top: 6px;
+  padding-bottom: 6px;
+  font-size: var(--lafvin-sidebar-nested-font-size);
+  line-height: var(--lafvin-sidebar-line-height);
+}
+
+/* Give diagrams, screenshots, tables, and code more room than prose. */
+.wy-nav-content {
+  max-width: var(--lafvin-content-width);
+}
+
+.rst-content {
+  font-family: var(--lafvin-font-sans);
+  font-size: var(--lafvin-body-font-size);
+  line-height: var(--lafvin-body-line-height);
+}
+
+.rst-content p,
+.rst-content li,
+.rst-content dd {
+  font-size: inherit;
+  line-height: inherit;
+  letter-spacing: var(--lafvin-body-letter-spacing);
+  color: var(--lafvin-body-color);
+  font-weight: var(--lafvin-body-font-weight);
+}
+
+.rst-content p {
+  margin-bottom: var(--lafvin-paragraph-spacing);
+}
+
+.rst-content section > p,
+.rst-content section > ul,
+.rst-content section > ol,
+.rst-content .section > p,
+.rst-content .section > ul,
+.rst-content .section > ol {
+  max-width: var(--lafvin-reading-width);
+}
+
+/* Feature summaries benefit from a little more horizontal room than prose. */
+.rst-content ul.wide-feature-list {
+  max-width: 1000px;
+}
+
+/* Let top-level notes and warnings sit slightly wider than the text column. */
+.rst-content section > .admonition,
+.rst-content .section > .admonition {
+  width: calc(100% + 24px);
+  margin-left: -12px;
+}
+
+.rst-content .admonition {
+  padding: 16px 18px;
+}
+
+.rst-content .admonition-title {
+  margin: -16px -18px 16px;
+  padding: 8px 18px;
+  line-height: 1.5;
+}
+
+.rst-content .admonition p:not(.admonition-title),
+.rst-content .admonition li {
+  line-height: var(--lafvin-admonition-line-height);
+}
+
+.rst-content h1,
+.rst-content h2,
+.rst-content h3,
+.rst-content h4,
+.rst-content h5,
+.rst-content h6,
+.rst-content .toctree-wrapper > p.caption {
+  font-family: var(--lafvin-font-sans);
+}
+
+.rst-content h1 {
+  padding: var(--lafvin-h1-padding-y) var(--lafvin-h1-padding-x);
+  margin-top: 0;
+  margin-bottom: var(--lafvin-h1-spacing-after);
+  background: var(--lafvin-h1-background);
+  color: var(--lafvin-h1-color);
+  font-size: var(--lafvin-h1-font-size);
+  font-weight: 700;
+  line-height: var(--lafvin-h1-line-height);
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.rst-content h1 .headerlink {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.rst-content h2 {
+  margin-top: var(--lafvin-h2-spacing-before);
+  margin-bottom: var(--lafvin-h2-spacing-after);
+  line-height: var(--lafvin-h2-line-height);
+}
+
+/* Inline code follows the surrounding text; code blocks use separate controls. */
+.rst-content code,
+.rst-content kbd,
+.rst-content samp {
+  line-height: inherit;
+  letter-spacing: normal;
+}
+
+.rst-content pre,
+.rst-content pre code,
+.rst-content .highlight pre,
+.rst-content div[class^="highlight"] pre,
+.rst-content pre.literal-block,
+.rst-content .linenodiv pre {
+  font-size: var(--lafvin-code-font-size);
+  line-height: var(--lafvin-code-line-height);
+  letter-spacing: normal;
+}
+
+.rst-content pre,
+.rst-content .highlight pre,
+.rst-content div[class^="highlight"] pre,
+.rst-content pre.literal-block,
+.rst-content .linenodiv pre {
+  padding: var(--lafvin-code-padding-y) var(--lafvin-code-padding-x);
+}
+
+.rst-content div[class^="highlight-"],
+.rst-content div[class*=" highlight-"] {
+  margin-bottom: var(--lafvin-code-spacing-after);
+}
+
+.rst-content table.docutils {
+  font-size: var(--lafvin-table-font-size);
+  line-height: var(--lafvin-table-line-height);
+}
+
+.rst-content table.docutils th,
+.rst-content table.docutils td {
+  font-size: var(--lafvin-table-font-size);
+  line-height: var(--lafvin-table-line-height);
+}
+
+html.writer-html5 .rst-content table.docutils td > p,
+html.writer-html5 .rst-content table.docutils th > p,
+html.writer-html4 .rst-content table.docutils td > p,
+html.writer-html4 .rst-content table.docutils th > p,
+.rst-content table.docutils td > p,
+.rst-content table.docutils th > p {
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.rst-content table.docutils th > p {
+  font-weight: 650;
+}
+
+@media screen and (max-width: 768px) {
+  :root {
+    --lafvin-body-font-size: 17px;
+    --lafvin-body-line-height: 1.7;
+    --lafvin-paragraph-spacing: 16px;
+    --lafvin-h1-font-size: 30px;
+    --lafvin-h1-padding-y: 14px;
+    --lafvin-h1-padding-x: 18px;
+    --lafvin-h1-spacing-after: 28px;
+    --lafvin-h2-spacing-before: 36px;
+    --lafvin-h2-spacing-after: 14px;
+    --lafvin-code-padding-y: 12px;
+    --lafvin-code-padding-x: 14px;
+    --lafvin-code-spacing-after: 24px;
+    --lafvin-table-font-size: 16px;
+    --lafvin-table-line-height: 1.55;
+  }
+
+  .wy-nav-content {
+    padding: 1.5rem 1.25rem;
+  }
+
+  .rst-content section > .admonition,
+  .rst-content .section > .admonition {
+    width: 100%;
+    margin-left: 0;
+  }
+}

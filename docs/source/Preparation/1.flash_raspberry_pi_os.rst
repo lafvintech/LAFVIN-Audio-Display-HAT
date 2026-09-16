@@ -1,0 +1,141 @@
+.. _flash-raspberry-pi-os:
+
+Flash Raspberry Pi OS
+=====================
+
+This guide uses Raspberry Pi Imager to write the operating system to a microSD
+card. Complete this process before installing the HAT so that you can configure
+the network and SSH before the first startup, without connecting a monitor or
+keyboard.
+
+What You Need
+-------------
+
+* A working microSD card and card reader.
+* An internet-connected Windows, macOS, or Linux computer.
+* Raspberry Pi Imager, available from the
+  `official Raspberry Pi software page <https://www.raspberrypi.com/software/>`_.
+
+Write the Operating System
+--------------------------
+
+1. **Select the Raspberry Pi model.**
+
+   On the ``Device`` screen, select the Raspberry Pi model you are using, then
+   click ``NEXT``.
+
+   .. image:: ../img/burning/1.png
+      :align: center
+      :alt: Device model selection screen in Raspberry Pi Imager
+
+2. **Select the operating system.**
+
+   Select ``Raspberry Pi OS (64-bit)``. This project has been verified with the
+   Trixie release of Raspberry Pi OS 64-bit. If the image released on June 18,
+   2026 is available, use it for the initial installation.
+
+   .. image:: ../img/burning/2.png
+      :align: center
+      :alt: Selecting Raspberry Pi OS 64-bit in Raspberry Pi Imager
+
+3. **Select the microSD card.**
+
+   On the ``Storage`` screen, check the capacity and device name, then select
+   the microSD card on which you want to install the operating system.
+
+   .. image:: ../img/burning/3.png
+      :align: center
+      :alt: Selecting the target microSD card in Raspberry Pi Imager
+
+   .. warning::
+      Writing the operating system erases all data on the selected storage
+      device. Make sure you selected the intended microSD card, not a USB drive
+      or external drive containing important data.
+
+4. **Set the hostname.**
+
+   On the ``Hostname`` screen, enter an easy-to-recognize device name, such as
+   ``raspberrypi``. On a local network that supports mDNS, you can later try to
+   reach the device at ``raspberrypi.local``.
+
+   .. image:: ../img/burning/4.png
+      :align: center
+      :alt: Setting the Raspberry Pi hostname in Raspberry Pi Imager
+
+5. **Set the locale and time zone.**
+
+   On the ``Localisation`` screen, select the time zone and keyboard layout for
+   your region.
+
+   .. image:: ../img/burning/5.png
+      :align: center
+      :alt: Setting the time zone and keyboard layout in Raspberry Pi Imager
+
+6. **Create a login user.**
+
+   Set a username and password for the Raspberry Pi and keep them in a safe
+   place. You will use these credentials to log in through SSH.
+
+   .. image:: ../img/burning/6.png
+      :align: center
+      :alt: Creating a login username and password in Raspberry Pi Imager
+
+7. **Configure Wi-Fi.**
+
+   Enter the name and password of the Wi-Fi network that the Raspberry Pi will
+   use, then confirm the country or region for the wireless network.
+
+   .. image:: ../img/burning/7.png
+      :align: center
+      :alt: Configuring a Wi-Fi network in Raspberry Pi Imager
+
+8. **Enable SSH.**
+
+   On the ``Remote access`` screen, enable SSH and select password
+   authentication. If SSH is not enabled, you will not be able to follow this
+   guide to log in to the Raspberry Pi remotely from another computer.
+
+   .. image:: ../img/burning/8.png
+      :align: center
+      :alt: Enabling SSH password authentication in Raspberry Pi Imager
+
+9. **Review the write settings.**
+
+   On the ``Writing`` screen, confirm the Raspberry Pi model, operating system,
+   storage device, hostname, user account, Wi-Fi network, and SSH settings.
+   Then click ``WRITE``.
+
+   .. image:: ../img/burning/9.png
+      :align: center
+      :alt: Settings summary before writing the operating system in Raspberry Pi Imager
+
+10. **Confirm the erase and write operation.**
+
+    Check the target storage device once more. If it is correct, click
+    ``I UNDERSTAND, ERASE AND WRITE``.
+
+    .. image:: ../img/burning/10.png
+       :align: center
+       :alt: Confirmation dialog for erasing the storage device and starting the write operation
+
+11. **Wait for writing and verification to finish.**
+
+    Do not remove the microSD card or card reader, or close Raspberry Pi Imager,
+    while the write operation is in progress.
+
+    .. image:: ../img/burning/11.png
+       :align: center
+       :alt: Raspberry Pi Imager writing the operating system to the microSD card
+
+12. **Safely remove the microSD card.**
+
+    When ``Write complete`` appears, confirm that the storage device has been
+    ejected, then safely remove the microSD card.
+
+    .. image:: ../img/burning/12.png
+       :align: center
+       :alt: Write complete message in Raspberry Pi Imager
+
+Keep the microSD card ready for the HAT installation in the next chapter. If
+Raspberry Pi Imager reports a verification failure, try a different card
+reader, microSD card, or USB port, then write the image again.

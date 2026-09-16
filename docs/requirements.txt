@@ -1,0 +1,9 @@
+# Pinning Sphinx keeps Read the Docs builds reproducible.
+sphinx == 7.2.5
+sphinx-rtd-theme
+sphinx_conestack_theme
+readthedocs-sphinx-search
+myst-parser
+sphinxcontrib-video
+sphinx_copybutton
+sphinxcontrib-images

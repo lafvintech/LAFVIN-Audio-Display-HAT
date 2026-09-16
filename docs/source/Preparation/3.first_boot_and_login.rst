@@ -1,0 +1,101 @@
+.. _first-boot-and-login:
+
+First Boot and Login
+====================
+
+After the first startup, log in to the Raspberry Pi through SSH. On Windows,
+you can use Windows Terminal or PowerShell. On macOS and Linux, you can use the
+built-in terminal.
+
+Find the Device Address
+-----------------------
+
+Open your router's administration page, find the Raspberry Pi that just joined
+the network, and note its IP address.
+
+Log In
+------
+
+Replace the username and address in the following command with the values you
+configured:
+
+.. code-block:: bash
+
+   ssh <username>@<raspberry-pi-ip-address>
+
+For example:
+
+.. code-block:: bash
+
+   ssh lafvin@192.168.1.50
+
+The first connection asks whether you trust the host fingerprint. Enter
+``yes``, then enter the password you configured in Raspberry Pi Imager. The
+terminal does not display any characters while you type the password; this is
+normal.
+
+Choose an SSH Client
+--------------------
+
+Choose an SSH client based on your operating system and preferences:
+
+* Windows Terminal or PowerShell: included with Windows and suitable for
+  running the ``ssh`` commands in this guide directly.
+* The macOS or Linux terminal: no additional graphical SSH client is required.
+* `Termius <https://termius.com/>`_: a graphical SSH client for Windows, macOS,
+  and Linux.
+* `PuTTY <https://putty.software/>`_ or
+  `MobaXterm <https://mobaxterm.mobatek.net/>`_: commonly used SSH clients for
+  Windows.
+* `VS Code Remote - SSH
+  <https://code.visualstudio.com/docs/remote/ssh>`_: useful for editing project
+  files directly on the Raspberry Pi. Confirm that a standard SSH login works
+  before using this option.
+
+The Linux commands used later in this guide are the same for every client. The
+screenshots below use Termius to demonstrate the graphical login process. If
+you are using a terminal or another SSH client, skip to "Verify the System
+Status."
+
+Log In with Termius (Optional)
+------------------------------
+
+1. Open Termius and create a new Host.
+
+   .. image:: ../img/ssh1.png
+      :align: center
+      :alt: Creating a new SSH Host in Termius
+
+2. Enter the Raspberry Pi's IP address, username, and password. Save the
+   password only on a trusted personal computer.
+
+   .. image:: ../img/ssh2.png
+      :align: center
+      :alt: Entering the Raspberry Pi IP address and login credentials in Termius
+
+3. Connect to the Host. The login is successful when the Raspberry Pi command
+   prompt appears in the terminal.
+
+   .. image:: ../img/ssh3.png
+      :align: center
+      :alt: Termius connected successfully to the Raspberry Pi terminal
+
+Verify the System Status
+------------------------
+
+After logging in, run the following commands:
+
+.. code-block:: bash
+
+   hostname
+   uname -a
+   cat /etc/os-release
+   ping -c 3 github.com
+
+The results should show the correct hostname, identify the operating system as
+Raspberry Pi OS, and confirm that the network check receives replies. If the
+network check fails, check the Wi-Fi or Ethernet connection before continuing.
+The project installation requires access to software repositories and GitHub.
+
+If you cannot log in, see "Unable to Log In over SSH" in
+:ref:`Troubleshooting <troubleshooting-guide>`.
