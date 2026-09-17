@@ -4,9 +4,7 @@ from pygments.lexers import Python3Lexer
 import time
 
 project = "LAFVIN Audio Display HAT"
-copyright = (
-    f"{time.localtime().tm_year}, LAFVIN"
-)
+copyright = "%Y, LAFVIN"
 author = "LAFVIN"
 source_encoding = "utf-8"
 
@@ -48,4 +46,4 @@ html_theme_options = {
     "logo_only": True,
 }
 
-html_title = "LAFVIN Audio Display HAT 用户教程"
+html_title = "LAFVIN Audio Display HAT Tutorial"

@@ -1,9 +1,10 @@
-# Pinning Sphinx keeps Read the Docs builds reproducible.
-sphinx == 7.2.5
-sphinx-rtd-theme
-sphinx_conestack_theme
-readthedocs-sphinx-search
-myst-parser
-sphinxcontrib-video
-sphinx_copybutton
-sphinxcontrib-images
+# Versions verified together with Python 3.12 and Sphinx 9.1.
+# Keep these pinned so local and Read the Docs builds use the same toolchain.
+sphinx==9.1.0
+sphinx-rtd-theme==3.1.0
+sphinx-conestack-theme==1.0
+readthedocs-sphinx-search==0.3.2
+myst-parser==5.1.0
+sphinxcontrib-video==0.4.1
+sphinx-copybutton==0.5.2
+sphinxcontrib-images==1.0.1
