@@ -235,6 +235,19 @@ html.writer-html4 .rst-content table.docutils th > p,
   font-weight: 650;
 }
 
+/* Keep the setup comparison and its links within the reading area. */
+.rst-content table.setup-route-table {
+  width: 100%;
+  table-layout: fixed;
+}
+
+.rst-content table.setup-route-table th,
+.rst-content table.setup-route-table td {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  vertical-align: top;
+}
+
 @media screen and (max-width: 768px) {
   :root {
     --lafvin-body-font-size: 17px;

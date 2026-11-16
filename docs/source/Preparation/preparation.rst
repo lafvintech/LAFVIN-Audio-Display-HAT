@@ -3,6 +3,17 @@
 Prepare the Raspberry Pi
 ========================
 
+.. note::
+   Choose one setup route:
+
+   * **Step-by-step setup**: Follow the chapters below, then Part 3, to install
+     Raspberry Pi OS, the drivers, and Runtime yourself.
+   * **Preconfigured image**: To use the software already installed, go
+     directly to :ref:`Flash a Preconfigured Image and Get Started
+     <flash-preconfigured-image>` in the appendix. The image starts in
+     demonstration mode; the appendix also explains how to enable real AI
+     services with your own API key.
+
 This section prepares the Raspberry Pi and establishes the first login. The
 project software is not installed yet. For a first-time setup, complete the
 steps in this order:

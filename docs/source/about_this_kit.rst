@@ -3,6 +3,29 @@
 About This Kit
 ==============
 
+Choose Your Setup Route
+-----------------------
+
+Choose one setup route before writing the microSD card:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 25 45 30
+   :class: setup-route-table
+
+   * - Setup route
+     - What you do
+     - Start here
+   * - **Quick start: preconfigured image**
+     - Flash the product image with the drivers and Runtime already installed.
+     - :ref:`Image quick start <flash-preconfigured-image>` in the appendix
+   * - **Step-by-step setup**
+     - Install Raspberry Pi OS, the drivers, and Runtime yourself.
+     - :ref:`Preparation <preparation-guide>`, then Part 3
+
+The preconfigured image starts in demonstration mode. Real AI features require
+your own service API key; the appendix explains how to configure it.
+
 Product Overview
 ----------------
 
@@ -104,21 +127,3 @@ you also need an API key from the corresponding service provider.
    disconnect its power supply. Hold the board by its PCB edges. Do not press
    on the display, and do not allow liquids or metal objects to contact the
    circuit board.
-
-Tutorial Path
--------------
-
-.. list-table::
-   :header-rows: 1
-   :widths: 30 70
-
-   * - Stage
-     - Completion criteria
-   * - :ref:`Prepare the Raspberry Pi <preparation-guide>`
-     - Raspberry Pi OS has been written to the microSD card, the HAT has been
-       installed correctly while power is disconnected, and you can log in to
-       the operating system.
-   * - :ref:`Install and deploy <tutorial>`
-     - The driver and Runtime are installed; the display, audio, RGB LED, and
-       physical button have passed verification; and Runtime starts
-       automatically at boot.
